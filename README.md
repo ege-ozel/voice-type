@@ -1,83 +1,87 @@
-# voice-type: her pencereye sesle yazma (Windows)
+**English** | [Türkçe](README.tr.md)
 
-Kısayola bas, konuş, tekrar bas: söylediğin, o an odakta olan pencereye (terminal, editör, tarayıcı)
-yapıştırılır ya da yalnızca panoya kopyalanır. Türkçe/İngilizce karışık konuşmayı ve yazılım terimlerini
-iyi çözer. Terminalde Claude Code / Codex gibi araçlara sesle komut vermek için yazıldı.
+# voice-type: voice typing into any window (Windows)
 
-Uygulama Rust ile yazılmış tek bir EXE'dir (`rust/`): ~460 KB, tek süreç, boşta ~2 MB özel bellek,
-çalışma zamanı bağımlılığı yok.
+Press a hotkey, speak, press it again: what you said is pasted into whichever window has focus
+(terminal, editor, browser), or only copied to the clipboard. It handles mixed Turkish/English speech
+and software jargon well. Built for talking to Claude Code / Codex in the terminal.
 
-## Yöntemler
+The app is a single Rust executable (`rust/`): ~460 KB, one process, ~2 MB private memory when idle,
+no runtime dependencies.
 
-Rozete ya da tepsi simgesine sağ tıklayıp seçilir; seçim hatırlanır.
+## Methods
 
-| | **OpenAI API** (önerilen) | **ChatGPT sekmesi** (deneysel) |
+Pick one by right-clicking the badge or the tray icon; the choice is remembered.
+
+| | **OpenAI API** (recommended) | **ChatGPT tab** (experimental) |
 |---|---|---|
-| Nasıl | Mikrofon kaydı doğrudan OpenAI ses-metin API'sine (`gpt-4o-transcribe`) | Chrome eklentisi, açık ChatGPT sekmesindeki dikte düğmesini kullanır |
-| Ücret | Kullanım başına (API faturası) | ChatGPT hesabının dikte sınırları |
-| Gerekenler | `OPENAI_API_KEY` | Chrome + eklenti + açık chatgpt.com sekmesi |
+| How | Microphone audio goes straight to the OpenAI speech-to-text API (`gpt-4o-transcribe`) | A Chrome extension uses the dictation button in an open ChatGPT tab |
+| Cost | Pay per use (API billing) | Your ChatGPT account's dictation limits |
+| Needs | `OPENAI_API_KEY` | Chrome + extension + an open chatgpt.com tab |
 
-> **ChatGPT sekmesi yöntemi hakkında:** Bu yöntem ChatGPT web arayüzünü programla kullanır (düğmeye
-> koddan basar, metni sayfadan okur). OpenAI Kullanım Koşulları, çıktının otomatik ya da programla
-> alınmasını yasaklar; bu yüzden yöntem varsayılan değildir, kişisel deney olarak bırakılmıştır ve
-> kullanımı kendi sorumluluğunuzdadır. Koşullarla uyumlu yol OpenAI API yöntemidir.
+> **About the ChatGPT tab method:** it drives the ChatGPT web UI programmatically (clicks the button
+> from code, reads the text from the page). OpenAI's Terms of Use prohibit extracting output
+> automatically or programmatically, so this method is not the default, is kept as a personal
+> experiment, and you use it at your own risk. The terms-compliant path is the OpenAI API method.
 
-## Kullanım
+## Usage
 
-| Kısayol | İş |
+| Hotkey | Action |
 |---|---|
-| **Ctrl+Alt+Space** | Dikteyi başlat / bitir ve yapıştır |
-| **Ctrl+Alt+Enter** | Bitir, yapıştır ve Enter gönder |
-| **Ctrl+Alt+Backspace** | İptal |
+| **Ctrl+Alt+Space** | Start dictation / finish and paste |
+| **Ctrl+Alt+Enter** | Finish, paste and press Enter |
+| **Ctrl+Alt+Backspace** | Cancel |
 
-Metin, bitirme kısayoluna bastığın anda odakta olan pencereye gider: konuşmaya başla, hedef pencereye
-geç, bitir. Terminallerde Ctrl+Shift+V, diğer pencerelerde Ctrl+V gönderilir. Sağ tıktan **yalnızca
-panoya kopyala** seçilirse hiçbir tuş gönderilmez.
+The text goes to the window that has focus at the moment you finish: start talking, switch to the
+target window, finish. Terminals get Ctrl+Shift+V, other windows Ctrl+V. With **copy to clipboard
+only** (right-click menu), no keys are sent at all.
 
-Sağ alttaki rozet durumu gösterir: HAZIR, DİNLİYOR, YAZIYOR, YAPIŞTIRILDI / KOPYALANDI, HATA.
-Tepsi simgesine çift tıklamak durum penceresini açar.
+The badge in the bottom-right corner shows the state: READY, LISTENING, TRANSCRIBING, PASTED / COPIED,
+ERROR (the UI itself is in Turkish). Double-click the tray icon for the status window.
 
-## Kurulum
+## Setup
 
-1. EXE'yi derle ([rustup](https://rustup.rs) + Visual Studio Build Tools) ya da GitHub Actions'taki
-   `ChatGPT-Dikte-exe` yapıtını indir:
+1. Build the EXE ([rustup](https://rustup.rs) + Visual Studio Build Tools), or download the
+   `ChatGPT-Dikte-exe` artifact from GitHub Actions:
 
    ```powershell
    cd rust
    cargo build --release      # rust\target\release\ChatGPT-Dikte.exe
    ```
 
-2. Yerel anahtar dosyasını üret (EXE'nin yanında `bridge-config.json`; eklentiyle yerel köprü bunu
-   kullanır): `python make_config.py`, sonra EXE'yi `dist\` klasöründen başlat.
-3. **OpenAI API:** https://platform.openai.com/api-keys adresinden anahtar al ve
-   `setx OPENAI_API_KEY "sk-..."` çalıştır. Sağ tık → **Dikte: OpenAI API**. Daha ucuz model için
-   `dist\dikte-ayarlar.json` dosyasına `"openai_model": "gpt-4o-mini-transcribe"` ekle.
-4. **ChatGPT sekmesi (isteğe bağlı):** `chrome://extensions` → Geliştirici modu → Paketlenmemiş öğe
-   yükle → `extension\`. Sekmede bir kez giriş yap ve mikrofon izni ver.
+2. Generate the local key file (`bridge-config.json` next to the EXE, shared by the extension and the
+   local bridge): `python make_config.py`, then start the EXE from `dist\`.
+3. **OpenAI API:** create a key at https://platform.openai.com/api-keys and run
+   `setx OPENAI_API_KEY "sk-..."`. Right-click → **Dikte: OpenAI API**. For the cheaper model, add
+   `"openai_model": "gpt-4o-mini-transcribe"` to `dist\dikte-ayarlar.json`.
+4. **ChatGPT tab (optional):** `chrome://extensions` → Developer mode → Load unpacked → `extension\`.
+   Sign in once in that tab and allow the microphone.
 
-Ayrıntılar, uçtan uca deneme listesi ve ölçüm betiği: [rust/README.md](rust/README.md).
+Details, an end-to-end test checklist and a measurement script: [rust/README.md](rust/README.md)
+(Turkish).
 
-## Teknik
+## Technical notes
 
-- **Rust, düz Win32:** kısayollar `RegisterHotKey`, arayüz GDI (neon tema, durum değişmedikçe çizim
-  yok), pano ve tuşlar `SendInput`. Mikrofon winmm `waveIn`, HTTPS Windows'un WinHTTP'si; TLS ya da ses
-  kütüphanesi gömülmez. Bağımlılıklar: `windows-sys`, `serde_json`.
-- **Durum makinesi platformdan bağımsız** (`rust/src/bridge.rs`): Windows'a dokunan her şey bir trait
-  arkasında, bu yüzden 51 birim testi her yerde çalışır; mikrofon ve HTTPS için ayrıca elle çalıştırılan
-  donanım testleri var (`cargo test -- --ignored`). CI her push'ta Windows'ta test edip EXE üretir.
-- **Yerel köprü** (ChatGPT sekmesi yöntemi): yalnızca `127.0.0.1` üzerinde dinler, istekleri kurulum
-  başına rastgele anahtarla doğrular. Dikte edilen metin günlüğe yazılmaz.
-- Simgeler kodla çizilir (`rust/src/icon.rs`, SDF ile yumuşatılmış); eklenti PNG'leri aynı koddan
-  üretilir ve test edilir.
+- **Rust on plain Win32:** hotkeys via `RegisterHotKey`, GDI UI (neon theme, no drawing unless the state
+  changes), clipboard and keystrokes via `SendInput`. Microphone via winmm `waveIn`, HTTPS via Windows'
+  built-in WinHTTP, so no TLS or audio library is bundled. Dependencies: `windows-sys`, `serde_json`.
+- **Platform-independent state machine** (`rust/src/bridge.rs`): everything that touches Windows sits
+  behind a trait, so the 51 unit tests run anywhere; separate opt-in hardware tests cover the microphone
+  and HTTPS (`cargo test -- --ignored`). CI tests on Windows and builds the EXE on every push.
+- **Local bridge** (ChatGPT tab method): listens on `127.0.0.1` only and checks a random per-install key
+  on every request. Dictated text is never written to the log.
+- Icons are drawn in code (`rust/src/icon.rs`, SDF anti-aliasing); the extension PNGs are generated
+  from the same code and checked by a test.
 
-| | Python sürümü (eski) | Rust sürümü |
+| | Python version (old) | Rust version |
 |---|---|---|
-| EXE | ~18 MB | ~0,46 MB |
-| Süreç | 2 | 1 |
-| Boşta bellek | ~62 MB | ~2 MB özel (~12 MB working set) |
+| EXE | ~18 MB | ~0.46 MB |
+| Processes | 2 | 1 |
+| Idle memory | ~62 MB | ~2 MB private (~12 MB working set) |
 
-## Eski Python sürümleri
+## Older Python versions
 
-Kökteki Python dosyaları ilk sürümlerdir ve başvuru için duruyor: `browser_bridge.py` + `tray_app.py`
-(ChatGPT sekmesi köprüsü, PyInstaller ile EXE) ve `voice_type.py` (ilk OpenAI API sürümü). Rust sürümü
-aynı HTTP protokolünü konuştuğu için eklenti ikisiyle de çalışır.
+The Python files in the repository root are the first versions, kept for reference:
+`browser_bridge.py` + `tray_app.py` (ChatGPT tab bridge, packaged with PyInstaller) and
+`voice_type.py` (the first OpenAI API version). The Rust version speaks the same HTTP protocol, so the
+extension works with both.
