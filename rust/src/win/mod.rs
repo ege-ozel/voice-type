@@ -34,6 +34,17 @@ pub fn read_token(dir: &Path) -> Option<String> {
     config.get("token")?.as_str().filter(|t| !t.is_empty()).map(String::from)
 }
 
+/// Anahtar okunamayınca gösterilen mesaj: aranan tam yolu ve dosyanın yok mu bozuk mu olduğunu söyler.
+fn config_error(dir: &Path) -> String {
+    let path = dir.join("bridge-config.json");
+    let problem = if path.exists() { "okunamadı ya da içinde \"token\" yok" } else { "bulunamadı" };
+    format!(
+        "Köprü başlatılamadı: bridge-config.json {problem}.\n\nAranan yer:\n{}\n\nEXE dosyasını \
+         bridge-config.json ile aynı klasöre (ör. dist\\) koyup oradan açın.",
+        path.display()
+    )
+}
+
 pub fn run() -> i32 {
     let dir = app_dir();
     // Tek kopya: ikinci açılış sessizce değil, açıklamayla çıkar.
@@ -45,7 +56,7 @@ pub fn run() -> i32 {
         }
     }
     let Some(token) = read_token(&dir) else {
-        message_box("Köprü başlatılamadı. EXE dosyasının yanında bridge-config.json bulunduğunu kontrol edin.", true);
+        message_box(&config_error(&dir), true);
         return 1;
     };
     let listener = match server::bind(server::PORT) {
@@ -90,5 +101,36 @@ pub fn run() -> i32 {
             message_box(&error, true);
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("dikte-test-{name}-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn config_error_names_missing_file_and_path() {
+        let dir = temp_dir("missing");
+        let message = config_error(&dir);
+        assert!(message.contains("bulunamadı"), "{message}");
+        assert!(message.contains(&dir.join("bridge-config.json").display().to_string()), "{message}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn config_error_tells_invalid_file_apart() {
+        let dir = temp_dir("invalid");
+        fs::write(dir.join("bridge-config.json"), "{}").unwrap();
+        assert_eq!(read_token(&dir), None);
+        assert!(config_error(&dir).contains("\"token\" yok"));
+        fs::write(dir.join("bridge-config.json"), "\u{feff}{\"token\": \"abc\"}").unwrap();
+        assert_eq!(read_token(&dir).as_deref(), Some("abc"));
+        fs::remove_dir_all(&dir).unwrap();
     }
 }
