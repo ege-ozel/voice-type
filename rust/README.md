@@ -58,6 +58,9 @@ Linux'tan çapraz derleme: `rustup target add x86_64-pc-windows-gnu`, `mingw-w64
    - Tam ekran (maximize) bir terminalde, başka pencereye geçip bitirin: terminal küçülmemeli.
    - Tepsi simgesi: çift tık durum penceresini açar; pencereyi kapatmak uygulamayı kapatmaz.
    - EXE'yi ikinci kez açın: "zaten açık" mesajı çıkmalı.
+   - Rozete ya da tepsi simgesine sağ tıklayın → **Bitirince yalnızca panoya kopyala**: dikte bitince
+     rozet **KOPYALANDI** der, hiçbir tuş gönderilmez; Ctrl+V ile istediğiniz yere yapıştırın. Seçim
+     EXE'nin yanındaki `dikte-ayarlar.json` dosyasında saklanır.
 
 ## Ölçüm
 

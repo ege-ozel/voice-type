@@ -26,6 +26,14 @@ Yapılanlar:
 Bilerek düzeltilmeyen: `make_config.py`, `bridge-config.json` varken `extension/config.js` eksikse
 üretmiyor (Python dosyalarına dokunulmaması istendiği için).
 
+## Bu oturumda eklenenler
+
+- Simgeler (`rust/src/icon.rs`), rozette yumuşak çizgi mikrofon, kısayollarda ayrı tuş kapakları.
+- Sağ tık menüsünde (rozet ve tepsi) "yapıştır / yalnızca panoya kopyala" modu; `dikte-ayarlar.json`.
+- Config hatasında aranan yol gösteriliyor.
+- Eklenti 2.3.1: yeniden yüklemeden sonra eski içerik betiğinin "Extension context invalidated"
+  hatası (`content.js` → `log`) yakalanıyor.
+
 ## Yapılacaklar
 
 1. ~~Push~~ ve ~~CI~~: dal GitHub'da, `rust` iş akışı yeşil. MSVC derlemesi yerelde de denendi (EXE 384 KB).

@@ -40,6 +40,8 @@ const WM_TRAY: u32 = WM_APP + 1;
 const TIMER_REFRESH: usize = 1;
 const MENU_STATUS: usize = 100;
 const MENU_QUIT: usize = 101;
+const MENU_PASTE: usize = 102;
+const MENU_COPY: usize = 103;
 const BUTTON_HIDE: usize = 201;
 const BUTTON_QUIT: usize = 202;
 const BADGE_W: f32 = 212.0;
@@ -188,6 +190,12 @@ fn tray_menu() {
     let hs = h();
     unsafe {
         let menu = CreatePopupMenu();
+        let copy_only = BRIDGE.get().is_some_and(|b| b.snapshot().copy_only);
+        AppendMenuW(menu, MF_STRING, MENU_PASTE, wide("Bitirince yapıştır").as_ptr());
+        AppendMenuW(menu, MF_STRING, MENU_COPY, wide("Bitirince yalnızca panoya kopyala").as_ptr());
+        let checked = if copy_only { MENU_COPY } else { MENU_PASTE };
+        CheckMenuRadioItem(menu, MENU_PASTE as u32, MENU_COPY as u32, checked as u32, MF_BYCOMMAND);
+        AppendMenuW(menu, MF_SEPARATOR, 0, null());
         AppendMenuW(menu, MF_STRING, MENU_STATUS, wide("Durum penceresi").as_ptr());
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
         AppendMenuW(menu, MF_STRING, MENU_QUIT, wide("Çıkış").as_ptr());
@@ -201,11 +209,23 @@ fn tray_menu() {
         PostMessageW(hs.host, WM_NULL, 0, 0);
         DestroyMenu(menu);
         match chosen {
+            MENU_PASTE | MENU_COPY => set_copy_only(chosen == MENU_COPY),
             MENU_STATUS => show_status(),
             MENU_QUIT => PostQuitMessage(0),
             _ => {}
         }
     }
+}
+
+fn set_copy_only(copy_only: bool) {
+    let Some(bridge) = BRIDGE.get() else { return };
+    bridge.set_copy_only(copy_only);
+    if let Err(error) = super::save_copy_only(&super::app_dir(), copy_only) {
+        crate::bridge::Platform::log(&bridge.platform, &format!("Ayar kaydedilemedi: {error}"));
+    }
+    // Durum penceresi kısayol açıklamalarını yeniden çizsin.
+    MEM.with(|m| m.borrow_mut().status = None);
+    refresh();
 }
 
 /// 200 ms'de bir: değişen ne varsa (rozet, ipucu, durum penceresi) yeniden çiz.
@@ -289,8 +309,9 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
 
 /// Mikrofon: uygulama simgesindeki çizimin içi boş, zeminsiz hâli; (26, 28) merkezli, durum renginde.
 unsafe fn draw_mic(dc: HDC, accent: u32) {
-    let size = px(40.0);
-    let pixels = crate::icon::glyph(size as usize, 2.0 * h().scale, accent);
+    // Kutu, parlamanın sönmesine yetecek kadar çizimden geniş.
+    let size = px(54.0);
+    let pixels = crate::icon::glyph(size as usize, 40.0 * h().scale, 2.0 * h().scale, accent);
     gfx::blend(dc, px(26.0) - size / 2, px(28.0) - size / 2, size, &pixels);
 }
 
@@ -333,6 +354,11 @@ fn paint_badge(hwnd: HWND, dc: HDC) {
 unsafe extern "system" fn badge_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_MOUSEACTIVATE => MA_NOACTIVATE as LRESULT,
+        // Sağ tık: tepsi simgesiyle aynı menü (yapıştır / yalnızca kopyala).
+        WM_RBUTTONUP => {
+            tray_menu();
+            0
+        }
         WM_ERASEBKGND => 1,
         WM_PAINT => {
             let mut ps: PAINTSTRUCT = zeroed();
@@ -433,13 +459,16 @@ fn paint_status(hwnd: HWND, dc: HDC) {
             let cap_w = |k: &str| (gfx::width(dc, hs.font_key, k) + px(16.0)).max(px(38.0));
             let plus_w = px(16.0);
             let keys_w = |keys: &[&str]| keys.iter().map(|k| cap_w(k)).sum::<i32>() + plus_w * (keys.len() as i32 - 1);
-            let column = view::SHORTCUTS.iter().map(|(keys, _)| keys_w(keys)).max().unwrap_or(0) + px(14.0);
+            let copy_only = bridge.snapshot().copy_only;
+            let shortcuts = view::shortcuts(copy_only);
+            let note = view::shortcut_note(copy_only);
+            let column = shortcuts.iter().map(|(keys, _)| keys_w(keys)).max().unwrap_or(0) + px(14.0);
             let row_h = px(34.0);
-            let h_note = gfx::height(dc, hs.font_normal, view::SHORTCUT_NOTE, inner);
-            let content = row_h * view::SHORTCUTS.len() as i32 + px(6.0) + h_note;
+            let h_note = gfx::height(dc, hs.font_normal, note, inner);
+            let content = row_h * shortcuts.len() as i32 + px(6.0) + h_note;
             card(dc, x, y, width, content, "KISAYOLLAR", palette::TEAL);
             let mut cy = y + px(16.0) + px(18.0);
-            for (keys, what) in view::SHORTCUTS {
+            for (keys, what) in shortcuts {
                 let mut kx = ix;
                 let (top, bottom) = (cy + px(4.0), cy + row_h - px(5.0));
                 for (i, key) in keys.iter().enumerate() {
@@ -466,7 +495,7 @@ fn paint_status(hwnd: HWND, dc: HDC) {
                 cy += row_h;
             }
             cy += px(6.0);
-            gfx::text(dc, hs.font_normal, palette::MUTED, view::SHORTCUT_NOTE,
+            gfx::text(dc, hs.font_normal, palette::MUTED, note,
                       &RECT { left: ix, top: cy, right: ix + inner, bottom: cy + h_note }, wrap);
         });
     }

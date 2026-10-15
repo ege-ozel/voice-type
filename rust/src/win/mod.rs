@@ -34,6 +34,21 @@ pub fn read_token(dir: &Path) -> Option<String> {
     config.get("token")?.as_str().filter(|t| !t.is_empty()).map(String::from)
 }
 
+const SETTINGS: &str = "dikte-ayarlar.json";
+
+/// Kullanıcı ayarı: bitirince yalnızca panoya kopyala. Dosya yoksa ya da bozuksa yapıştır.
+pub fn read_copy_only(dir: &Path) -> bool {
+    fs::read(dir.join(SETTINGS))
+        .ok()
+        .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
+        .and_then(|v| v.get("copy_only")?.as_bool())
+        .unwrap_or(false)
+}
+
+pub fn save_copy_only(dir: &Path, copy_only: bool) -> std::io::Result<()> {
+    fs::write(dir.join(SETTINGS), serde_json::json!({ "copy_only": copy_only }).to_string())
+}
+
 /// Anahtar okunamayınca gösterilen mesaj: aranan tam yolu ve dosyanın yok mu bozuk mu olduğunu söyler.
 fn config_error(dir: &Path) -> String {
     let path = dir.join("bridge-config.json");
@@ -69,6 +84,9 @@ pub fn run() -> i32 {
     };
 
     let bridge = Bridge::new(WinPlatform::new(Some(dir.join("dikte.log"))));
+    if read_copy_only(&dir) {
+        bridge.set_copy_only(true);
+    }
     {
         let bridge = Arc::clone(&bridge);
         let token: Arc<str> = Arc::from(token);
@@ -120,6 +138,19 @@ mod tests {
         let message = config_error(&dir);
         assert!(message.contains("bulunamadı"), "{message}");
         assert!(message.contains(&dir.join("bridge-config.json").display().to_string()), "{message}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn copy_only_setting_round_trips_and_defaults_to_paste() {
+        let dir = temp_dir("settings");
+        assert!(!read_copy_only(&dir), "dosya yokken yapıştır");
+        save_copy_only(&dir, true).unwrap();
+        assert!(read_copy_only(&dir));
+        save_copy_only(&dir, false).unwrap();
+        assert!(!read_copy_only(&dir));
+        fs::write(dir.join(SETTINGS), "bozuk").unwrap();
+        assert!(!read_copy_only(&dir));
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -103,22 +103,25 @@ pub fn render(size: usize) -> Vec<u8> {
     out
 }
 
-/// Rozet için yalnızca mikrofon (içi boş, zeminsiz): `size` x `size`, önceden çarpılmış alfalı BGRA,
-/// satırlar yukarıdan aşağı (GDI `AlphaBlend` biçimi). `stroke` çizgi kalınlığı (px).
-pub fn glyph(size: usize, stroke: f32, color: u32) -> Vec<u8> {
-    let s = size as f32;
-    let unit = s / 24.0;
-    let glow_width = stroke * 1.1;
+/// Rozet için yalnızca mikrofon (içi boş, zeminsiz): `size` x `size` kutunun ortasında, 24 birimlik
+/// ızgarası `mic_size` px olan çizim. Önceden çarpılmış alfalı BGRA, satırlar yukarıdan aşağı (GDI
+/// `AlphaBlend` biçimi). `stroke` çizgi kalınlığı (px). Parlama `GLOW_REACH` çizgi kalınlığında sıfıra
+/// iner; kutu ondan geniş tutulursa kenarlar tam saydam kalır (yoksa parlama kare biçiminde kesilir).
+pub fn glyph(size: usize, mic_size: f32, stroke: f32, color: u32) -> Vec<u8> {
+    const GLOW_REACH: f32 = 2.2;
+    let unit = mic_size / 24.0;
+    let offset = (size as f32 - mic_size) / 2.0;
+    let reach = stroke * GLOW_REACH;
     let [r, g, b] = rgb(color);
     let mut out = vec![0u8; size * size * 4];
     for y in 0..size {
         for x in 0..size {
-            let gx = (x as f32 + 0.5) / unit;
-            let gy = (y as f32 + 0.5) / unit;
+            let gx = (x as f32 + 0.5 - offset) / unit;
+            let gy = (y as f32 + 0.5 - offset) / unit;
             let d = mic(gx, gy, false) * unit - stroke / 2.0;
             let line = clamp01(0.5 - d);
-            let k = d.max(0.0) / glow_width;
-            let a = line + (1.0 - line) * 0.3 / (1.0 + k * k);
+            let fade = clamp01(1.0 - d.max(0.0) / reach);
+            let a = line + (1.0 - line) * 0.35 * fade * fade;
             let o = (y * size + x) * 4;
             out[o] = (b * a).round() as u8;
             out[o + 1] = (g * a).round() as u8;
@@ -215,12 +218,17 @@ mod tests {
     }
 
     #[test]
-    fn glyph_is_hollow_with_transparent_corners() {
-        let size = 48;
-        let img = glyph(size, 2.5, TEAL);
-        let unit = size as f32 / 24.0;
-        let at = |gx: f32, gy: f32| pixel(&img, size, (gx * unit) as usize, (gy * unit) as usize);
-        assert!(at(0.5, 0.5)[3] < 40, "köşe neredeyse saydam");
+    fn glyph_is_hollow_with_transparent_edges() {
+        let (size, mic_size) = (60, 48.0);
+        let img = glyph(size, mic_size, 2.5, TEAL);
+        let unit = mic_size / 24.0;
+        let at = |gx: f32, gy: f32| pixel(&img, size, (6.0 + gx * unit) as usize, (6.0 + gy * unit) as usize);
+        // Kutunun dört kenarı tam saydam: parlama kare biçiminde kesilmez.
+        for i in 0..size {
+            for (x, y) in [(i, 0), (i, size - 1), (0, i), (size - 1, i)] {
+                assert_eq!(pixel(&img, size, x, y)[3], 0, "kenar ({x}, {y})");
+            }
+        }
         assert!(at(12.0, 8.75)[3] < 120, "kapsülün içi boş");
         assert_eq!(at(12.0 - 3.25, 8.75)[3], 255, "kapsül çizgisi");
         let [b, g, r, a] = at(12.0, 20.25);

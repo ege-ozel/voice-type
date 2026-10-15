@@ -86,6 +86,8 @@ pub enum Stage {
     Idle,
     Working,
     Sent,
+    /// Yalnızca kopyalama modunda: metin panoda, tuş gönderilmedi.
+    Copied,
     Error,
 }
 
@@ -110,6 +112,8 @@ pub struct Snapshot {
     pub message: String,
     pub target: String,
     pub transfer: Transfer,
+    /// Bitirince yapıştırmak yerine yalnızca panoya kopyala.
+    pub copy_only: bool,
 }
 
 struct State {
@@ -128,6 +132,8 @@ struct State {
     message: String,
     phase_at: Option<Instant>,
     transfer: Transfer,
+    /// Bitirince yalnızca panoya kopyala.
+    copy_only: bool,
 }
 
 impl State {
@@ -196,6 +202,7 @@ impl<P: Platform> Bridge<P> {
                 target: None,
                 start_target: None,
                 send_enter: false,
+                copy_only: false,
                 message: String::new(),
                 phase_at: None,
                 transfer: Transfer::default(),
@@ -229,7 +236,13 @@ impl<P: Platform> Bridge<P> {
             message: st.message.clone(),
             target: st.target.as_ref().map(|t| t.title.clone()).unwrap_or_default(),
             transfer: st.transfer.clone(),
+            copy_only: st.copy_only,
         }
+    }
+
+    pub fn set_copy_only(&self, copy_only: bool) {
+        self.st().copy_only = copy_only;
+        self.log(if copy_only { "Mod: yalnızca panoya kopyala." } else { "Mod: yapıştır." });
     }
 
     #[cfg(test)]
@@ -486,6 +499,12 @@ impl<P: Platform> Bridge<P> {
             t.copied = true;
             t.copied_at = Some(Instant::now());
         });
+        if self.st().copy_only {
+            self.progress(|t| t.stage = Stage::Copied);
+            p.beep(1200, 50);
+            self.log(&format!("Panoya kopyalandı ({characters} karakter)."));
+            return Ok(characters);
+        }
         let target = match target {
             Some(t) if p.is_window(t.hwnd) => t,
             _ => return Err("Hedef pencere kapandı. Metin panoda; Ctrl+V ile yapıştırın.".into()),
@@ -846,6 +865,24 @@ pub mod tests {
         let (b, _) = deliver("ls", 111, true);
         assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlShiftV, Chord::Enter]);
         assert!(b.snapshot().transfer.enter_sent);
+    }
+
+    #[test]
+    fn copy_only_mode_copies_without_keys_or_focus_change() {
+        let b = bridge();
+        b.set_copy_only(true);
+        // Hedef kapanmış ve başka pencere önde olsa da kopyalama başarılı sayılır.
+        *b.platform.alive.lock().unwrap() = false;
+        *b.platform.foreground.lock().unwrap() = 222;
+        assert_eq!(b.deliver(Some("Merhaba"), Some(terminal()), true), Ok(7));
+        assert_eq!(*b.platform.clipboard.lock().unwrap(), vec!["Merhaba".to_string()]);
+        assert!(b.platform.chords.lock().unwrap().is_empty());
+        let s = b.snapshot();
+        assert!(s.copy_only);
+        assert_eq!((s.transfer.stage, s.transfer.copied, s.transfer.paste_sent, s.transfer.enter_sent),
+                   (Stage::Copied, true, false, false));
+        b.set_copy_only(false);
+        assert!(!b.snapshot().copy_only);
     }
 
     #[test]

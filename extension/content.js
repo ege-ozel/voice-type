@@ -100,7 +100,12 @@
 
   const log = (...args) => {
     console.info('[Dikte]', ...args);
-    chrome.runtime.sendMessage({type: 'trace', client: CLIENT, msg: args.join(' ')}).catch(() => {});
+    // Eklenti yeniden yüklenince bu eski betikte sendMessage eşzamanlı hata fırlatır
+    // ("Extension context invalidated"); .catch yalnızca reddedilen sözü yakalar.
+    if (!chrome.runtime?.id) return;
+    try {
+      chrome.runtime.sendMessage({type: 'trace', client: CLIENT, msg: args.join(' ')}).catch(() => {});
+    } catch (_) {}
   };
 
   // Dikteyi bitirip metni köprüye bildirir. Kısayolla (clickStop=true) ya da kullanıcı ChatGPT'de
