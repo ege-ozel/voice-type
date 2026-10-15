@@ -24,7 +24,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use super::gfx;
 use super::platform::WinPlatform;
-use crate::bridge::Bridge;
+use crate::bridge::{Bridge, Engine};
 use crate::view::{self, palette, BadgePhase};
 
 pub const APP_NAME: &str = "ChatGPT Dikte";
@@ -42,6 +42,8 @@ const MENU_STATUS: usize = 100;
 const MENU_QUIT: usize = 101;
 const MENU_PASTE: usize = 102;
 const MENU_COPY: usize = 103;
+const MENU_BROWSER: usize = 104;
+const MENU_API: usize = 105;
 const BUTTON_HIDE: usize = 201;
 const BUTTON_QUIT: usize = 202;
 const BADGE_W: f32 = 212.0;
@@ -190,7 +192,14 @@ fn tray_menu() {
     let hs = h();
     unsafe {
         let menu = CreatePopupMenu();
-        let copy_only = BRIDGE.get().is_some_and(|b| b.snapshot().copy_only);
+        let snap = BRIDGE.get().map(|b| b.snapshot());
+        let copy_only = snap.as_ref().is_some_and(|s| s.copy_only);
+        let api = snap.as_ref().is_some_and(|s| s.engine == Engine::Api);
+        AppendMenuW(menu, MF_STRING, MENU_BROWSER, wide("Dikte: ChatGPT sekmesi (ücretsiz)").as_ptr());
+        AppendMenuW(menu, MF_STRING, MENU_API, wide("Dikte: OpenAI API (ücretli)").as_ptr());
+        let engine = if api { MENU_API } else { MENU_BROWSER };
+        CheckMenuRadioItem(menu, MENU_BROWSER as u32, MENU_API as u32, engine as u32, MF_BYCOMMAND);
+        AppendMenuW(menu, MF_SEPARATOR, 0, null());
         AppendMenuW(menu, MF_STRING, MENU_PASTE, wide("Bitirince yapıştır").as_ptr());
         AppendMenuW(menu, MF_STRING, MENU_COPY, wide("Bitirince yalnızca panoya kopyala").as_ptr());
         let checked = if copy_only { MENU_COPY } else { MENU_PASTE };
@@ -210,11 +219,22 @@ fn tray_menu() {
         DestroyMenu(menu);
         match chosen {
             MENU_PASTE | MENU_COPY => set_copy_only(chosen == MENU_COPY),
+            MENU_BROWSER | MENU_API => set_engine(if chosen == MENU_API { Engine::Api } else { Engine::Browser }),
             MENU_STATUS => show_status(),
             MENU_QUIT => PostQuitMessage(0),
             _ => {}
         }
     }
+}
+
+fn set_engine(engine: Engine) {
+    let Some(bridge) = BRIDGE.get() else { return };
+    bridge.set_engine(engine);
+    if let Err(error) = super::save_engine(&super::app_dir(), engine) {
+        crate::bridge::Platform::log(&bridge.platform, &format!("Ayar kaydedilemedi: {error}"));
+    }
+    MEM.with(|m| m.borrow_mut().status = None);
+    refresh();
 }
 
 fn set_copy_only(copy_only: bool) {

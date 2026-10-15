@@ -31,6 +31,10 @@ Bilerek düzeltilmeyen: `make_config.py`, `bridge-config.json` varken `extension
 - Simgeler (`rust/src/icon.rs`), rozette yumuşak çizgi mikrofon, kısayollarda ayrı tuş kapakları.
 - Sağ tık menüsünde (rozet ve tepsi) "yapıştır / yalnızca panoya kopyala" modu; `dikte-ayarlar.json`.
 - Config hatasında aranan yol gösteriliyor.
+- OpenAI API modu (sağ tık → "Dikte: OpenAI API"): winmm kayıt + WinHTTP, `gpt-4o-transcribe`.
+  Anahtar `OPENAI_API_KEY` (süreç ya da kullanıcı ortamı) veya `dikte-ayarlar.json`. Mikrofon ve HTTPS
+  yolu gerçek donanımda denendi (`cargo test -- --ignored`); gerçek anahtarla uçtan uca deneme kullanıcıda.
+  Çoklu sağlayıcı bilerek eklenmedi (kullanıcı yalnızca OpenAI istedi).
 - Eklenti 2.3.1: yeniden yüklemeden sonra eski içerik betiğinin "Extension context invalidated"
   hatası (`content.js` → `log`) yakalanıyor.
 

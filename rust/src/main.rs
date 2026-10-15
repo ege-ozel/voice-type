@@ -5,6 +5,7 @@
 
 mod bridge;
 mod icon;
+mod openai;
 mod server;
 mod text;
 mod view;

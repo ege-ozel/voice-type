@@ -23,7 +23,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, ShowWindow, SW_RESTORE,
 };
 
+use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ};
+
+use super::{audio, http};
 use crate::bridge::Platform;
+use crate::openai;
 use crate::text::{Chord, Window};
 
 const CF_UNICODETEXT: u32 = 13;
@@ -31,12 +35,44 @@ const CF_UNICODETEXT: u32 = 13;
 pub struct WinPlatform {
     log_path: Option<PathBuf>,
     log_lock: Mutex<()>,
+    /// EXE klasörü: dikte-ayarlar.json burada.
+    dir: PathBuf,
+    recording: Mutex<Option<audio::Recording>>,
 }
 
 impl WinPlatform {
-    pub fn new(log_path: Option<PathBuf>) -> Self {
-        WinPlatform { log_path, log_lock: Mutex::new(()) }
+    pub fn new(dir: PathBuf, log_path: Option<PathBuf>) -> Self {
+        WinPlatform { log_path, log_lock: Mutex::new(()), dir, recording: Mutex::new(None) }
     }
+
+    fn api_key(&self) -> Result<String, String> {
+        let env = std::env::var("OPENAI_API_KEY").ok().or_else(user_env_key);
+        openai::api_key(env, &super::read_settings(&self.dir)).ok_or_else(|| {
+            "OpenAI API anahtarı yok. PowerShell'de: setx OPENAI_API_KEY \"sk-...\" (ya da \
+             dikte-ayarlar.json içine \"openai_api_key\")."
+                .to_string()
+        })
+    }
+}
+
+/// `setx` ile sonradan eklenen anahtar süreç ortamına gelmez; kullanıcı ortamından (kayıt defteri) okunur.
+fn user_env_key() -> Option<String> {
+    let (key, name) = (wide_z("Environment"), wide_z("OPENAI_API_KEY"));
+    let mut buf = vec![0u16; 512];
+    let mut size = (buf.len() * 2) as u32;
+    let rc = unsafe {
+        RegGetValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ,
+                     null_mut(), buf.as_mut_ptr() as *mut _, &mut size)
+    };
+    if rc != 0 {
+        return None;
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    Some(String::from_utf16_lossy(&buf[..len]))
+}
+
+fn wide_z(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(Some(0)).collect()
 }
 
 fn hwnd(h: isize) -> HWND {
@@ -202,5 +238,29 @@ impl Platform for WinPlatform {
 
     fn sleep(&self, d: Duration) {
         thread::sleep(d);
+    }
+
+    fn record_start(&self) -> Result<(), String> {
+        self.api_key()?;
+        let recording = audio::start()?;
+        *self.recording.lock().unwrap_or_else(|e| e.into_inner()) = Some(recording);
+        Ok(())
+    }
+
+    fn record_stop(&self) -> Option<Vec<u8>> {
+        let recording = self.recording.lock().unwrap_or_else(|e| e.into_inner()).take()?;
+        Some(openai::wav(&recording.finish(), openai::SAMPLE_RATE))
+    }
+
+    fn transcribe(&self, wav: &[u8]) -> Result<String, String> {
+        let key = self.api_key()?;
+        let model = openai::model(&super::read_settings(&self.dir));
+        let headers = format!("Authorization: Bearer {key}\r\nContent-Type: {}\r\n", openai::content_type());
+        let (status, body) = http::post(openai::HOST, openai::PATH, &headers, &openai::body(wav, &model))?;
+        openai::parse(status, &body)
+    }
+
+    fn spawn(&self, job: Box<dyn FnOnce() + Send>) {
+        let _ = thread::Builder::new().stack_size(256 * 1024).spawn(job);
     }
 }

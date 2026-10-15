@@ -62,6 +62,28 @@ Linux'tan çapraz derleme: `rustup target add x86_64-pc-windows-gnu`, `mingw-w64
      rozet **KOPYALANDI** der, hiçbir tuş gönderilmez; Ctrl+V ile istediğiniz yere yapıştırın. Seçim
      EXE'nin yanındaki `dikte-ayarlar.json` dosyasında saklanır.
 
+## OpenAI API modu (isteğe bağlı, ücretli)
+
+Rozete ya da tepsi simgesine sağ tıklayıp **Dikte: OpenAI API** seçilince ChatGPT sekmesi ve eklenti
+kullanılmaz: kısayol mikrofonu doğrudan kaydeder (16 kHz mono), bitirince ses OpenAI'nin
+`/v1/audio/transcriptions` uç noktasına (`gpt-4o-transcribe`) gider, metin her zamanki gibi yapıştırılır
+ya da panoya kopyalanır. ChatGPT'nin web arayüzünü otomatikleştirmediği için OpenAI kullanım koşullarıyla
+uyumludur; dakika başına ücretlendirilir.
+
+Kurulum: https://platform.openai.com/api-keys adresinden anahtar alın, PowerShell'de
+
+```powershell
+setx OPENAI_API_KEY "sk-..."
+```
+
+Uygulamayı yeniden başlatmak gerekmez (kullanıcı ortamı her istekte okunur). Alternatif olarak EXE'nin
+yanındaki `dikte-ayarlar.json` dosyasına `"openai_api_key": "sk-..."` yazılabilir. Daha ucuz model için
+aynı dosyaya `"openai_model": "gpt-4o-mini-transcribe"`.
+
+Ek kütüphane yok: kayıt winmm (`waveIn`), HTTPS Windows'un WinHTTP'si ile. EXE ~66 KB büyüdü; kayıt
+arabellekleri ve iş parçacığı yalnızca dikte sürerken vardır. En uzun kayıt 10 dakika.
+Donanım testleri: `cargo test -- --ignored` (1 sn mikrofon kaydı + geçersiz anahtarla OpenAI'ye istek).
+
 ## Ölçüm
 
 Köprü kapalıyken, iki EXE'yi sırayla ölçün:
@@ -90,8 +112,10 @@ tipini seçer. Windows 11'de durum penceresinin başlık çubuğu ve kenarlığ�
   adımları). Windows'a dokunan her şey `Platform` arkasında, bu yüzden her yerde test edilir.
 - `src/server.rs`: std::net ile HTTP sunucusu, yetkilendirme, CORS.
 - `src/text.rs`: metin temizleme, pencereye göre Ctrl+V / Ctrl+Shift+V.
+- `src/openai.rs`: WAV, multipart gövde, yanıt/hata çözme, anahtar ve model seçimi.
 - `src/view.rs`: rozet, tepsi ipucu ve durum penceresi metinleri.
-- `src/win/`: Win32 uygulaması (pano, SendInput, odak, bip, günlük, pencereler, tepsi); `gfx.rs` neon
+- `src/win/`: Win32 uygulaması (pano, SendInput, odak, bip, günlük, pencereler, tepsi; `audio.rs` mikrofon,
+  `http.rs` WinHTTP); `gfx.rs` neon
   çizim yardımcıları.
 - `src/icon.rs`: simge çizimi (koyu yuvarlak kare + neon teal çizgi mikrofon, SDF ile yumuşatılmış) ve
   bağımlılıksız PNG yazıcı. `build.rs` bunu EXE/tepsi simgesi olarak gömer; eklentinin

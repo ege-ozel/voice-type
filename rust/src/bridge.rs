@@ -13,6 +13,8 @@ pub const POLL_TIMEOUT: Duration = Duration::from_secs(20);
 pub const CLIENT_TTL: Duration = Duration::from_secs(20 + 15);
 pub const START_TIMEOUT: Duration = Duration::from_secs(8);
 pub const RESULT_TIMEOUT: Duration = Duration::from_secs(120);
+/// API modunda kayıt bu süreden sonra kendiliğinden bitirilir (OpenAI dosya sınırı 25 MB).
+pub const MAX_RECORDING: Duration = Duration::from_secs(10 * 60);
 const STUCK_AFTER: Duration = Duration::from_secs(5);
 
 /// Bu modülün dış dünyaya dokunduğu her yer.
@@ -34,6 +36,24 @@ pub trait Platform: Send + Sync + 'static {
     /// `job`'u `delay` sonra başka bir iş parçacığında çalıştırır.
     fn after(&self, delay: Duration, job: Box<dyn FnOnce() + Send>);
     fn sleep(&self, d: Duration);
+    /// API modu: mikrofon kaydını başlatır (anahtar yoksa ya da mikrofon açılamazsa hata).
+    fn record_start(&self) -> Result<(), String>;
+    /// Kaydı durdurur; WAV baytları. Kayıt yoksa None.
+    fn record_stop(&self) -> Option<Vec<u8>>;
+    /// WAV'ı OpenAI ile yazıya döker; engeller, `spawn` içinden çağrılır.
+    fn transcribe(&self, wav: &[u8]) -> Result<String, String>;
+    /// `job`'u hemen başka bir iş parçacığında çalıştırır.
+    fn spawn(&self, job: Box<dyn FnOnce() + Send>);
+}
+
+/// Sesi kim yazıya döker.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Engine {
+    /// ChatGPT sekmesindeki dikte (eklenti üzerinden, ücretsiz).
+    #[default]
+    Browser,
+    /// Mikrofon kaydı doğrudan OpenAI ses-metin API'sine (ücretli).
+    Api,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,6 +134,7 @@ pub struct Snapshot {
     pub transfer: Transfer,
     /// Bitirince yapıştırmak yerine yalnızca panoya kopyala.
     pub copy_only: bool,
+    pub engine: Engine,
 }
 
 struct State {
@@ -134,6 +155,7 @@ struct State {
     transfer: Transfer,
     /// Bitirince yalnızca panoya kopyala.
     copy_only: bool,
+    engine: Engine,
 }
 
 impl State {
@@ -203,6 +225,7 @@ impl<P: Platform> Bridge<P> {
                 start_target: None,
                 send_enter: false,
                 copy_only: false,
+                engine: Engine::Browser,
                 message: String::new(),
                 phase_at: None,
                 transfer: Transfer::default(),
@@ -237,7 +260,20 @@ impl<P: Platform> Bridge<P> {
             target: st.target.as_ref().map(|t| t.title.clone()).unwrap_or_default(),
             transfer: st.transfer.clone(),
             copy_only: st.copy_only,
+            engine: st.engine,
         }
+    }
+
+    /// Yöntemi değiştirir; süren dikte varsa önce iptal edilir.
+    pub fn set_engine(&self, engine: Engine) {
+        if self.st().phase != Phase::Idle {
+            self.cancel();
+        }
+        self.st().engine = engine;
+        self.log(match engine {
+            Engine::Browser => "Yöntem: ChatGPT sekmesi.",
+            Engine::Api => "Yöntem: OpenAI API.",
+        });
     }
 
     pub fn set_copy_only(&self, copy_only: bool) {
@@ -292,6 +328,9 @@ impl<P: Platform> Bridge<P> {
     }
 
     pub fn start(self: &Arc<Self>) {
+        if self.st().engine == Engine::Api {
+            return self.api_start();
+        }
         let start_target = self.platform.foreground_window();
         let session = {
             let mut st = self.st();
@@ -320,6 +359,9 @@ impl<P: Platform> Bridge<P> {
     }
 
     pub fn stop(self: &Arc<Self>, send_enter: bool) {
+        if self.st().engine == Engine::Api {
+            return self.api_stop(send_enter);
+        }
         let target = self.platform.foreground_window();
         let title = target.title.clone();
         let session = {
@@ -343,16 +385,24 @@ impl<P: Platform> Bridge<P> {
     }
 
     pub fn cancel(&self) {
-        {
+        let recording = {
             let mut st = self.st();
             if st.phase == Phase::Idle {
                 return;
             }
-            let session = st.session;
-            st.enqueue_cancel(session);
+            let api = st.engine == Engine::Api;
+            let recording = api && st.phase == Phase::Listening;
+            if !api {
+                let session = st.session;
+                st.enqueue_cancel(session);
+            }
             st.set_phase(Phase::Idle, "Dikte iptal edildi.");
-        }
+            recording
+        };
         self.cond.notify_all();
+        if recording {
+            let _ = self.platform.record_stop();
+        }
         self.platform.beep(300, 120);
         self.log("Dikte iptal edildi.");
     }
@@ -371,6 +421,98 @@ impl<P: Platform> Bridge<P> {
             st.enqueue_cancel(session);
         }
         self.fail(message);
+    }
+
+    // --- API modu ---------------------------------------------------------
+    fn api_start(self: &Arc<Self>) {
+        let start_target = self.platform.foreground_window();
+        let session = {
+            let mut st = self.st();
+            if st.phase != Phase::Idle {
+                return;
+            }
+            st.session += 1;
+            st.target = None;
+            st.start_target = Some(start_target);
+            st.send_enter = false;
+            st.session
+        };
+        if let Err(error) = self.platform.record_start() {
+            self.fail(&error);
+            return;
+        }
+        self.set_phase(Phase::Listening, "");
+        self.platform.beep(880, 90);
+        self.log("Dinleniyor (OpenAI API)… Bitince Ctrl+Alt+Space.");
+        let me = Arc::clone(self);
+        self.platform.after(MAX_RECORDING, Box::new(move || {
+            let still = {
+                let st = me.st();
+                st.session == session && st.phase == Phase::Listening
+            };
+            if still {
+                me.log("Kayıt süresi doldu; bitiriliyor.");
+                me.api_stop(false);
+            }
+        }));
+    }
+
+    fn api_stop(self: &Arc<Self>, send_enter: bool) {
+        let target = self.platform.foreground_window();
+        let title = target.title.clone();
+        let session = {
+            let mut st = self.st();
+            if st.phase != Phase::Listening {
+                return;
+            }
+            st.target = Some(target);
+            st.send_enter = send_enter;
+            st.set_phase(Phase::Transcribing, "");
+            st.session
+        };
+        self.cond.notify_all();
+        self.platform.beep(660, 70);
+        let Some(wav) = self.platform.record_stop().filter(|w| w.len() >= crate::openai::MIN_WAV) else {
+            self.fail("Kayıt çok kısa ya da boş; mikrofonu kontrol edin.");
+            return;
+        };
+        let seconds = (wav.len() - 44) as f32 / (crate::openai::SAMPLE_RATE * 2) as f32;
+        self.log(&format!("Kayıt bitti ({seconds:.1} sn), OpenAI'ye gönderiliyor → {title}"));
+        let me = Arc::clone(self);
+        self.platform.spawn(Box::new(move || {
+            let result = me.platform.transcribe(&wav);
+            me.api_result(session, result);
+        }));
+    }
+
+    fn api_result(&self, session: u64, result: Result<String, String>) {
+        let (target, send_enter) = {
+            let mut st = self.st();
+            if st.session != session || st.phase != Phase::Transcribing {
+                drop(st);
+                self.log("OpenAI sonucu geç geldi (iptal edilmiş); atlandı.");
+                return;
+            }
+            let pending = (st.target.clone(), st.send_enter);
+            st.set_phase(Phase::Idle, "");
+            pending
+        };
+        self.cond.notify_all();
+        match result {
+            Ok(text) => {
+                let _ = self.finish(Some(&text), target, send_enter);
+            }
+            Err(error) => self.fail(&error),
+        }
+    }
+
+    /// Yazıya dökülen metni teslim eder; hata durumunu gösterir ve günlüğe yazar.
+    fn finish(&self, text: Option<&str>, target: Option<Window>, send_enter: bool) -> Result<usize, String> {
+        self.deliver(text, target, send_enter).inspect_err(|error| {
+            self.st().message = error.clone();
+            self.platform.beep(220, 180);
+            self.log(error);
+        })
     }
 
     // --- eklenti iletişimi -------------------------------------------------
@@ -454,14 +596,9 @@ impl<P: Platform> Bridge<P> {
                 drop(st);
                 self.cond.notify_all();
                 let text = data.get("text").and_then(Value::as_str);
-                return match self.deliver(text, target, send_enter) {
+                return match self.finish(text, target, send_enter) {
                     Ok(characters) => json!({"ok": true, "characters": characters}),
-                    Err(error) => {
-                        self.st().message = error.clone();
-                        self.platform.beep(220, 180);
-                        self.log(&error);
-                        json!({"ok": false, "error": error})
-                    }
+                    Err(error) => json!({"ok": false, "error": error}),
                 };
             }
             _ => {}
@@ -591,6 +728,14 @@ pub mod tests {
         pub beeps: Mutex<Vec<u32>>,
         pub logs: Mutex<Vec<String>>,
         pub timers: Mutex<Vec<Duration>>,
+        /// API modu: record_start hatası, kayıt sonucu, yazıya dökme sonucu ve çağrı sayıları.
+        pub record_error: Mutex<Option<String>>,
+        pub recording: Mutex<bool>,
+        pub wav: Mutex<Option<Vec<u8>>>,
+        pub transcript: Mutex<Option<Result<String, String>>>,
+        pub transcribed: Mutex<Vec<usize>>,
+        /// spawn edilen işler; testte elle çalıştırılır.
+        pub jobs: Mutex<Vec<Box<dyn FnOnce() + Send>>>,
     }
 
     impl Fake {
@@ -636,6 +781,34 @@ pub mod tests {
             self.timers.lock().unwrap().push(delay);
         }
         fn sleep(&self, _: Duration) {}
+        fn record_start(&self) -> Result<(), String> {
+            if let Some(error) = self.record_error.lock().unwrap().clone() {
+                return Err(error);
+            }
+            *self.recording.lock().unwrap() = true;
+            Ok(())
+        }
+        fn record_stop(&self) -> Option<Vec<u8>> {
+            let was = std::mem::replace(&mut *self.recording.lock().unwrap(), false);
+            if was { self.wav.lock().unwrap().clone() } else { None }
+        }
+        fn transcribe(&self, wav: &[u8]) -> Result<String, String> {
+            self.transcribed.lock().unwrap().push(wav.len());
+            self.transcript.lock().unwrap().clone().unwrap_or(Err("yok".into()))
+        }
+        fn spawn(&self, job: Box<dyn FnOnce() + Send>) {
+            self.jobs.lock().unwrap().push(job);
+        }
+    }
+
+    impl Fake {
+        /// Bekleyen arka plan işlerini (OpenAI isteği) çalıştırır.
+        pub fn run_jobs(&self) {
+            let jobs: Vec<_> = self.jobs.lock().unwrap().drain(..).collect();
+            for job in jobs {
+                job();
+            }
+        }
     }
 
     const A: &str = "tab-aaaaaaaa";
@@ -865,6 +1038,95 @@ pub mod tests {
         let (b, _) = deliver("ls", 111, true);
         assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlShiftV, Chord::Enter]);
         assert!(b.snapshot().transfer.enter_sent);
+    }
+
+    // --- API modu --------------------------------------------------------------
+    fn api_bridge() -> Arc<Bridge<Fake>> {
+        let b = bridge();
+        b.set_engine(Engine::Api);
+        *b.platform.wav.lock().unwrap() = Some(crate::openai::wav(&[0; 32_000], 16_000));
+        *b.platform.transcript.lock().unwrap() = Some(Ok("merhaba dünya".into()));
+        b
+    }
+
+    #[test]
+    fn api_cycle_records_transcribes_and_pastes_without_tab() {
+        let b = api_bridge();
+        assert!(!b.connected(), "sekme gerekmez");
+        b.toggle(false);
+        assert_eq!(b.snapshot().phase, Phase::Listening);
+        assert!(*b.platform.recording.lock().unwrap());
+        assert!(b.platform.timers.lock().unwrap().contains(&MAX_RECORDING));
+        b.toggle(true);
+        assert_eq!(b.snapshot().phase, Phase::Transcribing);
+        b.platform.run_jobs();
+        assert_eq!(*b.platform.transcribed.lock().unwrap(), vec![44 + 32_000]);
+        assert_eq!(b.snapshot().phase, Phase::Idle);
+        assert_eq!(*b.platform.clipboard.lock().unwrap(), vec!["merhaba dünya".to_string()]);
+        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlShiftV, Chord::Enter]);
+        assert_eq!(*b.platform.beeps.lock().unwrap(), vec![880, 660, 1200]);
+        // Eklentiye hiçbir komut gitmez.
+        assert!(b.st().commands.is_empty());
+    }
+
+    #[test]
+    fn api_start_failure_shows_error() {
+        let b = api_bridge();
+        *b.platform.record_error.lock().unwrap() = Some("OpenAI API anahtarı yok.".into());
+        b.toggle(false);
+        let s = b.snapshot();
+        assert_eq!((s.phase, s.message.as_str()), (Phase::Idle, "OpenAI API anahtarı yok."));
+        assert_eq!(*b.platform.beeps.lock().unwrap(), vec![220]);
+    }
+
+    #[test]
+    fn api_too_short_recording_is_not_sent() {
+        let b = api_bridge();
+        *b.platform.wav.lock().unwrap() = Some(crate::openai::wav(&[0; 100], 16_000));
+        b.toggle(false);
+        b.toggle(false);
+        b.platform.run_jobs();
+        assert!(b.platform.transcribed.lock().unwrap().is_empty());
+        assert!(b.snapshot().message.contains("çok kısa"));
+    }
+
+    #[test]
+    fn api_error_is_shown_and_nothing_pasted() {
+        let b = api_bridge();
+        *b.platform.transcript.lock().unwrap() = Some(Err("OpenAI API anahtarı geçersiz.".into()));
+        b.toggle(false);
+        b.toggle(false);
+        b.platform.run_jobs();
+        let s = b.snapshot();
+        assert_eq!((s.phase, s.message.as_str()), (Phase::Idle, "OpenAI API anahtarı geçersiz."));
+        assert!(b.platform.clipboard.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn api_cancel_discards_recording_and_late_result() {
+        let b = api_bridge();
+        b.toggle(false);
+        b.cancel();
+        assert!(!*b.platform.recording.lock().unwrap(), "kayıt durduruldu");
+        assert_eq!(b.snapshot().phase, Phase::Idle);
+
+        // Gönderildikten sonra iptal: geç gelen sonuç yapıştırılmaz.
+        b.toggle(false);
+        b.toggle(false);
+        b.cancel();
+        b.platform.run_jobs();
+        assert!(b.platform.clipboard.lock().unwrap().is_empty());
+        assert!(b.platform.logs.lock().unwrap().iter().any(|l| l.contains("geç geldi")));
+    }
+
+    #[test]
+    fn switching_engine_cancels_running_dictation() {
+        let b = api_bridge();
+        b.toggle(false);
+        b.set_engine(Engine::Browser);
+        let s = b.snapshot();
+        assert_eq!((s.phase, s.engine), (Phase::Idle, Engine::Browser));
+        assert!(!*b.platform.recording.lock().unwrap());
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! tray_app.py'deki metinlerin birebir karşılığı). Çizim Windows tarafında yapılır.
 use std::time::{Duration, Instant};
 
-use crate::bridge::{Phase, Snapshot, Stage};
+use crate::bridge::{Engine, Phase, Snapshot, Stage};
 use crate::text::prefix;
 
 pub const FLASH: Duration = Duration::from_secs(4);
@@ -78,7 +78,12 @@ pub fn badge_phase(s: &Snapshot, now: Instant) -> BadgePhase {
     if recent && !s.message.is_empty() {
         return BadgePhase::Error;
     }
-    if s.connected { BadgePhase::Ready } else { BadgePhase::Closed }
+    if ready(s) { BadgePhase::Ready } else { BadgePhase::Closed }
+}
+
+/// API modunda sekme gerekmez.
+fn ready(s: &Snapshot) -> bool {
+    s.connected || s.engine == Engine::Api
 }
 
 /// Rozette gösterilecek (aşama, alt yazı).
@@ -90,6 +95,7 @@ pub fn badge(s: &Snapshot, now: Instant) -> (BadgePhase, String) {
         BadgePhase::Clipboard => format!("{} karakter • Ctrl+V", s.transfer.characters),
         BadgePhase::Error => prefix(&s.message, 30).to_string(),
         BadgePhase::Ready if s.copy_only => "Ctrl+Alt+Space: konuş • pano".to_string(),
+        BadgePhase::Transcribing if s.engine == Engine::Api => "OpenAI yazıya döküyor".to_string(),
         _ => phase.style().subtitle.to_string(),
     };
     (phase, subtitle)
@@ -98,8 +104,9 @@ pub fn badge(s: &Snapshot, now: Instant) -> (BadgePhase, String) {
 pub fn tray_tip(s: &Snapshot) -> String {
     let tip = match s.phase {
         Phase::Starting | Phase::Listening => "Dikte: dinliyor — bitirmek için Ctrl+Alt+Space".to_string(),
+        Phase::Transcribing if s.engine == Engine::Api => "Dikte: OpenAI yazıya döküyor…".to_string(),
         Phase::Transcribing => "Dikte: ChatGPT yazıya döküyor…".to_string(),
-        Phase::Idle if !s.connected => "Dikte: ChatGPT sekmesi bağlı değil".to_string(),
+        Phase::Idle if !ready(s) => "Dikte: ChatGPT sekmesi bağlı değil".to_string(),
         Phase::Idle if s.transfer.stage == Stage::Sent => {
             format!("Dikte: hazır — son aktarım {} karakter", s.transfer.characters)
         }
@@ -151,7 +158,7 @@ pub fn status_text(s: &Snapshot) -> StatusText {
         Phase::Starting => ("BAŞLATILIYOR…", PINK),
         Phase::Listening => ("DİNLİYOR", PINK),
         Phase::Transcribing => ("YAZIYA DÖKÜLÜYOR…", BLUE),
-        Phase::Idle if s.connected => ("HAZIR", TEAL),
+        Phase::Idle if ready(s) => ("HAZIR", TEAL),
         Phase::Idle => ("BAĞLI DEĞİL", GRAY),
     };
     let t = &s.transfer;
@@ -182,7 +189,9 @@ pub fn status_text(s: &Snapshot) -> StatusText {
     StatusText {
         heading,
         accent,
-        connection: if s.connected {
+        connection: if s.engine == Engine::Api {
+            "Yöntem: OpenAI API (ücretli). Ses doğrudan OpenAI'ye gider; ChatGPT sekmesi gerekmez."
+        } else if s.connected {
             "ChatGPT sekmesi bağlı."
         } else {
             "Chrome'da chatgpt.com sekmesini açın (arka planda kalabilir). Eklenti yüklü olmalı."
@@ -207,7 +216,7 @@ mod tests {
 
     fn snap(phase: Phase, connected: bool) -> Snapshot {
         Snapshot { connected, phase, phase_at: None, message: String::new(), target: String::new(),
-                   transfer: Transfer::default(), copy_only: false }
+                   transfer: Transfer::default(), copy_only: false, engine: Engine::Browser }
     }
 
     #[test]
@@ -261,5 +270,18 @@ mod tests {
         assert_eq!(t.checks[1], (false, "Yapıştırma kapalı (yalnızca kopyala modu)"));
         assert_eq!(shortcuts(true)[0].1, "başlat / bitir ve kopyala");
         assert_eq!(shortcuts(false)[0].1, "başlat / bitir ve yapıştır");
+    }
+
+    #[test]
+    fn api_engine_is_ready_without_tab() {
+        let now = Instant::now();
+        let mut s = snap(Phase::Idle, false);
+        s.engine = Engine::Api;
+        assert_eq!(badge_phase(&s, now), BadgePhase::Ready);
+        assert_eq!(status_text(&s).heading, "HAZIR");
+        assert!(status_text(&s).connection.contains("OpenAI API"));
+        s.phase = Phase::Transcribing;
+        assert_eq!(badge(&s, now).1, "OpenAI yazıya döküyor");
+        assert_eq!(tray_tip(&s), "Dikte: OpenAI yazıya döküyor…");
     }
 }

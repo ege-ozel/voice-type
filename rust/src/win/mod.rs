@@ -1,5 +1,7 @@
 //! Windows girişi: tek kopya kontrolü, yapılandırma, HTTP sunucusu, kısayol işçisi ve arayüz.
+mod audio;
 pub mod gfx;
+mod http;
 pub mod platform;
 pub mod ui;
 
@@ -14,7 +16,7 @@ use serde_json::Value;
 use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
 use windows_sys::Win32::System::Threading::CreateMutexW;
 
-use crate::bridge::{Bridge, Platform};
+use crate::bridge::{Bridge, Engine, Platform};
 use crate::server;
 use platform::WinPlatform;
 use ui::{message_box, wide, Action};
@@ -36,17 +38,40 @@ pub fn read_token(dir: &Path) -> Option<String> {
 
 const SETTINGS: &str = "dikte-ayarlar.json";
 
-/// Kullanıcı ayarı: bitirince yalnızca panoya kopyala. Dosya yoksa ya da bozuksa yapıştır.
-pub fn read_copy_only(dir: &Path) -> bool {
+/// Kullanıcı ayarları (`copy_only`, `engine`, isteğe bağlı `openai_api_key`, `openai_model`).
+/// Dosya yoksa ya da bozuksa boş nesne: yapıştır + ChatGPT sekmesi.
+pub fn read_settings(dir: &Path) -> Value {
     fs::read(dir.join(SETTINGS))
         .ok()
-        .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
-        .and_then(|v| v.get("copy_only")?.as_bool())
-        .unwrap_or(false)
+        .and_then(|raw| serde_json::from_slice::<Value>(raw.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&raw)).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+/// Tek bir alanı yazar; dosyadaki diğer alanlar (ör. API anahtarı) korunur.
+pub fn save_setting(dir: &Path, key: &str, value: Value) -> std::io::Result<()> {
+    let mut settings = read_settings(dir);
+    settings[key] = value;
+    fs::write(dir.join(SETTINGS), serde_json::to_string_pretty(&settings).unwrap_or_default())
+}
+
+pub fn read_copy_only(dir: &Path) -> bool {
+    read_settings(dir).get("copy_only").and_then(Value::as_bool).unwrap_or(false)
 }
 
 pub fn save_copy_only(dir: &Path, copy_only: bool) -> std::io::Result<()> {
-    fs::write(dir.join(SETTINGS), serde_json::json!({ "copy_only": copy_only }).to_string())
+    save_setting(dir, "copy_only", Value::Bool(copy_only))
+}
+
+pub fn read_engine(dir: &Path) -> Engine {
+    match read_settings(dir).get("engine").and_then(Value::as_str) {
+        Some("api") => Engine::Api,
+        _ => Engine::Browser,
+    }
+}
+
+pub fn save_engine(dir: &Path, engine: Engine) -> std::io::Result<()> {
+    save_setting(dir, "engine", Value::from(if engine == Engine::Api { "api" } else { "browser" }))
 }
 
 /// Anahtar okunamayınca gösterilen mesaj: aranan tam yolu ve dosyanın yok mu bozuk mu olduğunu söyler.
@@ -83,9 +108,12 @@ pub fn run() -> i32 {
         }
     };
 
-    let bridge = Bridge::new(WinPlatform::new(Some(dir.join("dikte.log"))));
+    let bridge = Bridge::new(WinPlatform::new(dir.clone(), Some(dir.join("dikte.log"))));
     if read_copy_only(&dir) {
         bridge.set_copy_only(true);
+    }
+    if read_engine(&dir) == Engine::Api {
+        bridge.set_engine(Engine::Api);
     }
     {
         let bridge = Arc::clone(&bridge);
@@ -155,6 +183,23 @@ mod tests {
     }
 
     #[test]
+    fn saving_one_setting_keeps_the_others() {
+        let dir = temp_dir("merge");
+        fs::write(dir.join(SETTINGS), r#"{"openai_api_key": "sk-test", "openai_model": "gpt-4o-mini-transcribe"}"#)
+            .unwrap();
+        save_copy_only(&dir, true).unwrap();
+        save_engine(&dir, Engine::Api).unwrap();
+        let s = read_settings(&dir);
+        assert_eq!(s["openai_api_key"], "sk-test");
+        assert_eq!(s["openai_model"], "gpt-4o-mini-transcribe");
+        assert!(read_copy_only(&dir));
+        assert_eq!(read_engine(&dir), Engine::Api);
+        save_engine(&dir, Engine::Browser).unwrap();
+        assert_eq!(read_engine(&dir), Engine::Browser);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn config_error_tells_invalid_file_apart() {
         let dir = temp_dir("invalid");
         fs::write(dir.join("bridge-config.json"), "{}").unwrap();
@@ -163,5 +208,31 @@ mod tests {
         fs::write(dir.join("bridge-config.json"), "\u{feff}{\"token\": \"abc\"}").unwrap();
         assert_eq!(read_token(&dir).as_deref(), Some("abc"));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Gerçek mikrofon gerekir: `cargo test -- --ignored microphone`.
+    #[test]
+    #[ignore]
+    fn microphone_records_about_one_second() {
+        let recording = audio::start().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let pcm = recording.finish();
+        let seconds = pcm.len() as f32 / (crate::openai::SAMPLE_RATE * 2) as f32;
+        assert!((0.8..1.5).contains(&seconds), "{seconds} sn");
+    }
+
+    /// İnternet gerekir; geçersiz anahtarla TLS + HTTP yolunu dener: `cargo test -- --ignored openai`.
+    #[test]
+    #[ignore]
+    fn openai_rejects_invalid_key_over_https() {
+        let wav = crate::openai::wav(&[0; 32_000], crate::openai::SAMPLE_RATE);
+        let headers = format!("Authorization: Bearer sk-gecersiz
+Content-Type: {}
+",
+                              crate::openai::content_type());
+        let (status, body) = http::post(crate::openai::HOST, crate::openai::PATH, &headers,
+                                        &crate::openai::body(&wav, crate::openai::DEFAULT_MODEL)).unwrap();
+        assert_eq!(status, 401);
+        assert_eq!(crate::openai::parse(status, &body), Err("OpenAI API anahtarı geçersiz.".into()));
     }
 }

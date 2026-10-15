@@ -1,6 +1,8 @@
 # Kuruluma özel gizli anahtar — asla commit etme (make_config.py ile üretilir)
 bridge-config.json
 extension/config.js
+# OpenAI API anahtarı içerebilir
+dikte-ayarlar.json
 
 .venv/
 build/
