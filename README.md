@@ -1,82 +1,83 @@
-# ChatGPT dikte → terminal (fare yok)
+# voice-type: her pencereye sesle yazma (Windows)
 
-ChatGPT web sitesinin diktesini kullanır (karışık dilleri iyi anlar). OpenAI API'si çağrılmaz;
-API anahtarı veya ücret gerekmez. ChatGPT hesabınızın dikte sınırları geçerlidir.
+Kısayola bas, konuş, tekrar bas: söylediğin, o an odakta olan pencereye (terminal, editör, tarayıcı)
+yapıştırılır ya da yalnızca panoya kopyalanır. Türkçe/İngilizce karışık konuşmayı ve yazılım terimlerini
+iyi çözer. Terminalde Claude Code / Codex gibi araçlara sesle komut vermek için yazıldı.
 
-> **Rust sürümü:** Aynı köprünün ~0,5 MB'lık, tek süreçli Rust karşılığı `rust/` klasöründe
-> ([rust/README.md](rust/README.md)). Eklenti ve `bridge-config.json` ikisiyle de çalışır.
+Uygulama Rust ile yazılmış tek bir EXE'dir (`rust/`): ~460 KB, tek süreç, boşta ~2 MB özel bellek,
+çalışma zamanı bağımlılığı yok.
+
+## Yöntemler
+
+Rozete ya da tepsi simgesine sağ tıklayıp seçilir; seçim hatırlanır.
+
+| | **OpenAI API** (önerilen) | **ChatGPT sekmesi** (deneysel) |
+|---|---|---|
+| Nasıl | Mikrofon kaydı doğrudan OpenAI ses-metin API'sine (`gpt-4o-transcribe`) | Chrome eklentisi, açık ChatGPT sekmesindeki dikte düğmesini kullanır |
+| Ücret | Kullanım başına (API faturası) | ChatGPT hesabının dikte sınırları |
+| Gerekenler | `OPENAI_API_KEY` | Chrome + eklenti + açık chatgpt.com sekmesi |
+
+> **ChatGPT sekmesi yöntemi hakkında:** Bu yöntem ChatGPT web arayüzünü programla kullanır (düğmeye
+> koddan basar, metni sayfadan okur). OpenAI Kullanım Koşulları, çıktının otomatik ya da programla
+> alınmasını yasaklar; bu yüzden yöntem varsayılan değildir, kişisel deney olarak bırakılmıştır ve
+> kullanımı kendi sorumluluğunuzdadır. Koşullarla uyumlu yol OpenAI API yöntemidir.
 
 ## Kullanım
 
-Terminalde (veya herhangi bir pencerede) çalışırken:
-
 | Kısayol | İş |
 |---|---|
-| **Ctrl+Alt+Space** | Dikteyi başlat (yüksek bip, gösterge **DİNLİYOR** / kırmızı) |
-| **Ctrl+Alt+Space** | Bitir → metin odaktaki pencereye yapıştırılır (kısa bip) |
-| **Ctrl+Alt+Enter** | Bitir → yapıştır **ve Enter gönder** |
+| **Ctrl+Alt+Space** | Dikteyi başlat / bitir ve yapıştır |
+| **Ctrl+Alt+Enter** | Bitir, yapıştır ve Enter gönder |
 | **Ctrl+Alt+Backspace** | İptal |
 
-Chrome'a geçmeniz gerekmez; ChatGPT sekmesi arka planda açık durur. Metin, **bitirme kısayoluna
-bastığınız anda odakta olan pencereye** gider. 4 terminal yan yana ise: konuşmaya başlayın,
-hangi terminale gidecekse ona geçin (Alt+Tab / Win+sayı / terminal sekme kısayolu), bitirin.
+Metin, bitirme kısayoluna bastığın anda odakta olan pencereye gider: konuşmaya başla, hedef pencereye
+geç, bitir. Terminallerde Ctrl+Shift+V, diğer pencerelerde Ctrl+V gönderilir. Sağ tıktan **yalnızca
+panoya kopyala** seçilirse hiçbir tuş gönderilmez.
 
-Yeni satırlar tek satıra çevrilir; Ctrl+Alt+Space Enter göndermez.
+Sağ alttaki rozet durumu gösterir: HAZIR, DİNLİYOR, YAZIYOR, YAPIŞTIRILDI / KOPYALANDI, HATA.
+Tepsi simgesine çift tıklamak durum penceresini açar.
 
-## İlk kurulum
+## Kurulum
 
-0. Repoyu yeni klonladıysanız: `python -m pip install -r requirements-exe.txt`, `python make_config.py`
-   (yerel anahtarı üretir) ve `python build_exe.py`.
-1. `dist\ChatGPT-Dikte.exe` dosyasını açın (veya `start.bat`).
-2. Chrome'da `chrome://extensions` → **Geliştirici modu** → **Paketlenmemiş öğe yükle** →
-   `D:\CodeSpace\voice-type\extension`. Eklenti zaten yüklüyse ↻ (yeniden yükle) düğmesine basın.
-3. Sekmeyi bağlamak için bir şey yapmanız gerekmez: eklenti arka planda sabitlenmiş bir
-   `chatgpt.com` sekmesi açar ve otomatik bağlanır (Chrome uyutursa yeniden yükler).
-   İlk seferde o sekmede giriş yapın ve bir kez elle **Dictate** ile mikrofon izni verin.
-4. Sağ alttaki gösterge **HAZIR** (yeşil) olunca kullanabilirsiniz.
+1. EXE'yi derle ([rustup](https://rustup.rs) + Visual Studio Build Tools) ya da GitHub Actions'taki
+   `ChatGPT-Dikte-exe` yapıtını indir:
 
-## Gösterge
+   ```powershell
+   cd rust
+   cargo build --release      # rust\target\release\ChatGPT-Dikte.exe
+   ```
 
-- **BAĞLI DEĞİL / gri:** ChatGPT sekmesi yok, eklenti yüklü değil veya sekme yenilenmeli.
-- **HAZIR / yeşil:** Ctrl+Alt+Space ile konuşmaya başlayabilirsiniz.
-- **DİNLİYOR / kırmızı:** ChatGPT kaydediyor.
-- **YAZIYOR… / mavi:** ChatGPT metne çeviriyor.
-- **YAPIŞTIRILDI / turuncu:** metin yapıştırıldı (birkaç saniye görünür).
-- **HATA / koyu kırmızı:** ayrıntı için tepsideki mikrofon simgesine çift tıklayın.
+2. Yerel anahtar dosyasını üret (EXE'nin yanında `bridge-config.json`; eklentiyle yerel köprü bunu
+   kullanır): `python make_config.py`, sonra EXE'yi `dist\` klasöründen başlat.
+3. **OpenAI API:** https://platform.openai.com/api-keys adresinden anahtar al ve
+   `setx OPENAI_API_KEY "sk-..."` çalıştır. Sağ tık → **Dikte: OpenAI API**. Daha ucuz model için
+   `dist\dikte-ayarlar.json` dosyasına `"openai_model": "gpt-4o-mini-transcribe"` ekle.
+4. **ChatGPT sekmesi (isteğe bağlı):** `chrome://extensions` → Geliştirici modu → Paketlenmemiş öğe
+   yükle → `extension\`. Sekmede bir kez giriş yap ve mikrofon izni ver.
 
-ChatGPT sekmesinde kare (durdur) düğmesine elle basarsanız da metin, dikteyi başlattığınız pencereye
-yapıştırılır. Dikte sürerken Ctrl+Alt+Space her zaman bitirir.
+Ayrıntılar, uçtan uca deneme listesi ve ölçüm betiği: [rust/README.md](rust/README.md).
 
-## Sorun giderme
+## Teknik
 
-- Olaylar `dist\dikte.log` dosyasına yazılır (dikte edilen metin yazılmaz). Sorun olursa bu dosyaya bakın.
-- Eklenti dosyaları güncellendiğinde (manifest sürümü artınca) eklenti bir dakika içinde kendini yeniden yükler.
+- **Rust, düz Win32:** kısayollar `RegisterHotKey`, arayüz GDI (neon tema, durum değişmedikçe çizim
+  yok), pano ve tuşlar `SendInput`. Mikrofon winmm `waveIn`, HTTPS Windows'un WinHTTP'si; TLS ya da ses
+  kütüphanesi gömülmez. Bağımlılıklar: `windows-sys`, `serde_json`.
+- **Durum makinesi platformdan bağımsız** (`rust/src/bridge.rs`): Windows'a dokunan her şey bir trait
+  arkasında, bu yüzden 51 birim testi her yerde çalışır; mikrofon ve HTTPS için ayrıca elle çalıştırılan
+  donanım testleri var (`cargo test -- --ignored`). CI her push'ta Windows'ta test edip EXE üretir.
+- **Yerel köprü** (ChatGPT sekmesi yöntemi): yalnızca `127.0.0.1` üzerinde dinler, istekleri kurulum
+  başına rastgele anahtarla doğrular. Dikte edilen metin günlüğe yazılmaz.
+- Simgeler kodla çizilir (`rust/src/icon.rs`, SDF ile yumuşatılmış); eklenti PNG'leri aynı koddan
+  üretilir ve test edilir.
 
-- **BAĞLI DEĞİL** kalıyorsa ChatGPT sekmesini yenileyin (F5).
-- "Dikte başlamadı": ChatGPT sekmesinde mikrofon izni verilmemiş veya ChatGPT arayüzü değişmiş.
-- Windows pencere geçişine izin vermezse metin panoda kalır: Ctrl+V / Ctrl+Shift+V ile yapıştırın.
-- Yönetici olarak çalışan terminale normal izinli uygulama yapıştıramaz; ikisini aynı izinle çalıştırın.
-- ChatGPT arayüzü İngilizce dışında bir dildeyse düğme adları farklı olabilir; `extension/content.js`
-  içindeki `LABELS` listesine ekleyin.
+| | Python sürümü (eski) | Rust sürümü |
+|---|---|---|
+| EXE | ~18 MB | ~0,46 MB |
+| Süreç | 2 | 1 |
+| Boşta bellek | ~62 MB | ~2 MB özel (~12 MB working set) |
 
-## Teknik kapsam
+## Eski Python sürümleri
 
-Eklenti yalnızca chatgpt.com'da çalışır; ChatGPT'nin Dictate / Stop dictation / Cancel dictation düğmelerine basar ve dikte bitince giriş kutusundaki yeni metni okuyup kutuyu temizler. Sohbet geçmişini okumaz, **Transcribe and send** düğmesine asla basmaz, bu yüzden ChatGPT'ye mesaj gitmez. Yalnızca bilgisayardaki `127.0.0.1` yardımcısına erişir. Yardımcı sadece loopback üzerinde dinler ve kurulum başına rastgele anahtarla istekleri doğrular. Taslaklar günlük dosyasına yazılmaz. `bridge-config.json` ve `extension/config.js` bu kurulumun yerel anahtarını içerir; paylaşmayın.
-
-Önceki API sürümü `voice_type.py` dosyasında korunur, ama `start.bat` artık tarayıcı köprüsünü çalıştırır. Python bağımlılıkları yalnızca `keyboard` ve `pyperclip` paketleridir; mevcut sanal ortam kullanılabilir.
-
-## EXE / sağ alt bildirim alanı
-
-`dist\ChatGPT-Dikte.exe` Python kurulumu gerektirmeden çalışır. Yanındaki
-`bridge-config.json` dosyası mevcut Chrome eklentisinin anahtarıyla eşleşir;
-EXE ile birlikte tutulmalıdır. Bu dosyayı veya bu kuruluma ait paketi paylaşmayın.
-
-Simgeye sağ tıklayın: **Durum penceresi**, **Çıkış**. Durum penceresini kapatmak köprüyü
-durdurmaz. Aynı köprünün iki kopyası eşzamanlı çalışmaz.
-
-Tekrar derlemek ve test etmek için:
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest test_bridge
-.\.venv\Scripts\python.exe build_exe.py
-```
+Kökteki Python dosyaları ilk sürümlerdir ve başvuru için duruyor: `browser_bridge.py` + `tray_app.py`
+(ChatGPT sekmesi köprüsü, PyInstaller ile EXE) ve `voice_type.py` (ilk OpenAI API sürümü). Rust sürümü
+aynı HTTP protokolünü konuştuğu için eklenti ikisiyle de çalışır.
