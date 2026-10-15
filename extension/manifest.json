@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Dikte → Terminal",
-  "version": "2.2.0",
+  "version": "2.3.1",
   "description": "Ctrl+Alt+Space ile ChatGPT diktesini arka planda başlatır, metni odaktaki terminale yapıştırır. API kullanmaz.",
   "permissions": ["scripting", "alarms"],
   "host_permissions": ["http://127.0.0.1/*", "https://chatgpt.com/*"],
@@ -11,5 +11,10 @@
     "js": ["content.js"],
     "run_at": "document_idle"
   }],
-  "action": {"default_popup": "popup.html", "default_title": "Dikte → Terminal"}
+  "icons": {"16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png"},
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Dikte → Terminal",
+    "default_icon": {"16": "icons/icon16.png", "32": "icons/icon32.png"}
+  }
 }
