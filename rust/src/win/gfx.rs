@@ -1,5 +1,6 @@
-//! Ucuz "neon" çizim yardımcıları (düz GDI). Alfa karıştırma ya da katmanlı pencere yok: parlama,
-//! aynı şeklin zemine karıştırılmış sönük renklerle birkaç piksel kaydırılıp altına çizilmesidir.
+//! Ucuz "neon" çizim yardımcıları (düz GDI). Katmanlı pencere yok: parlama, aynı şeklin zemine
+//! karıştırılmış sönük renklerle birkaç piksel kaydırılıp altına çizilmesidir. Tek istisna rozetteki
+//! mikrofon: `icon::glyph` ile yumuşak kenarlı çizilip `blend` ile yapıştırılır.
 //! Çizim yalnızca durum değişince yapıldığından boştayken maliyet sıfırdır.
 use std::ptr::null_mut;
 
@@ -147,4 +148,34 @@ pub unsafe fn line(dc: HDC, points: &[(i32, i32)], color: u32, width: i32) {
     }
     SelectObject(dc, old);
     DeleteObject(pen);
+}
+
+/// Önceden çarpılmış alfalı, yukarıdan aşağı BGRA kareyi (`size` x `size`) yumuşak kenarlarıyla çizer.
+pub unsafe fn blend(dc: HDC, x: i32, y: i32, size: i32, pixels: &[u8]) {
+    let mut info: BITMAPINFO = std::mem::zeroed();
+    info.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+    info.bmiHeader.biWidth = size;
+    info.bmiHeader.biHeight = -size;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    let mut bits = null_mut();
+    let bmp = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
+    if bmp.is_null() || bits.is_null() {
+        return;
+    }
+    let len = pixels.len().min((size * size * 4) as usize);
+    std::ptr::copy_nonoverlapping(pixels.as_ptr(), bits as *mut u8, len);
+    let mem = CreateCompatibleDC(dc);
+    let old = SelectObject(mem, bmp);
+    let blend = BLENDFUNCTION {
+        BlendOp: AC_SRC_OVER as u8,
+        BlendFlags: 0,
+        SourceConstantAlpha: 255,
+        AlphaFormat: AC_SRC_ALPHA as u8,
+    };
+    GdiAlphaBlend(dc, x, y, size, size, mem, 0, 0, size, size, blend);
+    SelectObject(mem, old);
+    DeleteObject(bmp);
+    DeleteDC(mem);
 }

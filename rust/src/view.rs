@@ -112,10 +112,11 @@ pub struct StatusText {
     pub details: String,
 }
 
-pub const SHORTCUTS: [(&str, &str); 3] = [
-    ("Ctrl+Alt+Space", "başlat / bitir ve yapıştır"),
-    ("Ctrl+Alt+Enter", "bitir, yapıştır ve Enter"),
-    ("Ctrl+Alt+Backspace", "iptal"),
+/// Her tuş ayrı kapak olarak çizilir.
+pub const SHORTCUTS: [(&[&str], &str); 3] = [
+    (&["Ctrl", "Alt", "Space"], "başlat / bitir ve yapıştır"),
+    (&["Ctrl", "Alt", "Enter"], "bitir, yapıştır ve Enter"),
+    (&["Ctrl", "Alt", "Backspace"], "iptal"),
 ];
 pub const SHORTCUT_NOTE: &str = "Metin, bitirdiğin anda odakta olan pencereye gider.";
 

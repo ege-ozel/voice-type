@@ -61,7 +61,7 @@ struct Handles {
     font_label: HFONT,
     font_bold: HFONT,
     font_normal: HFONT,
-    font_mono: HFONT,
+    font_key: HFONT,
     taskbar_created: u32,
 }
 
@@ -287,21 +287,11 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
     }
 }
 
-/// Mikrofon simgesi: önce kalın ve sönük (parlama), sonra ince ve parlak.
-unsafe fn draw_mic(dc: HDC, accent: u32, filled: bool) {
-    let arc: Vec<(i32, i32)> = (0..=20)
-        .map(|i| {
-            let a = std::f32::consts::PI * i as f32 / 20.0;
-            (px(26.0 - 10.0 * a.cos()), px(28.0 + 9.0 * a.sin()))
-        })
-        .collect();
-    let capsule = RECT { left: px(21.0), top: px(12.0), right: px(31.0), bottom: px(33.0) };
-    for (color, width) in [(gfx::mix(accent, palette::BG, 0.28), px(4.0)), (accent, px(2.0))] {
-        gfx::round_rect(dc, &capsule, px(10.0), (filled && color == accent).then_some(accent), color, width);
-        gfx::line(dc, &arc, color, width);
-        gfx::line(dc, &[(px(26.0), px(37.0)), (px(26.0), px(44.0))], color, width);
-        gfx::line(dc, &[(px(20.0), px(44.0)), (px(32.0), px(44.0))], color, width);
-    }
+/// Mikrofon: uygulama simgesindeki çizimin içi boş, zeminsiz hâli; (26, 28) merkezli, durum renginde.
+unsafe fn draw_mic(dc: HDC, accent: u32) {
+    let size = px(40.0);
+    let pixels = crate::icon::glyph(size as usize, 2.0 * h().scale, accent);
+    gfx::blend(dc, px(26.0) - size / 2, px(28.0) - size / 2, size, &pixels);
 }
 
 fn paint_badge(hwnd: HWND, dc: HDC) {
@@ -316,7 +306,7 @@ fn paint_badge(hwnd: HWND, dc: HDC) {
         gfx::buffered(dc, rc.right, rc.bottom, |dc| {
             gfx::gradient(dc, &rc, gfx::mix(accent, palette::BG, 0.13), palette::BG);
             gfx::neon_frame(dc, &rc, px(14.0), accent, palette::BG, px(1.0));
-            draw_mic(dc, accent, phase == BadgePhase::Listening);
+            draw_mic(dc, accent);
             gfx::line(dc, &[(px(48.0), px(14.0)), (px(48.0), rc.bottom - px(14.0))],
                       gfx::mix(accent, palette::BG, 0.3), px(1.0));
             let left = px(58.0);
@@ -439,21 +429,39 @@ fn paint_status(hwnd: HWND, dc: HDC) {
                       &RECT { left: ix, top: cy, right: ix + inner, bottom: cy + h_details }, wrap);
             y += used + px(16.0);
 
-            // Kısayollar: tuş kapakları.
-            let key_w = view::SHORTCUTS.iter().map(|(k, _)| gfx::width(dc, hs.font_mono, k)).max().unwrap_or(0)
-                + px(18.0);
-            let row_h = px(30.0);
+            // Kısayollar: her tuş ayrı kapak, aralarında "+"; açıklamalar tek sütunda hizalı.
+            let cap_w = |k: &str| (gfx::width(dc, hs.font_key, k) + px(16.0)).max(px(38.0));
+            let plus_w = px(16.0);
+            let keys_w = |keys: &[&str]| keys.iter().map(|k| cap_w(k)).sum::<i32>() + plus_w * (keys.len() as i32 - 1);
+            let column = view::SHORTCUTS.iter().map(|(keys, _)| keys_w(keys)).max().unwrap_or(0) + px(14.0);
+            let row_h = px(34.0);
             let h_note = gfx::height(dc, hs.font_normal, view::SHORTCUT_NOTE, inner);
             let content = row_h * view::SHORTCUTS.len() as i32 + px(6.0) + h_note;
             card(dc, x, y, width, content, "KISAYOLLAR", palette::TEAL);
             let mut cy = y + px(16.0) + px(18.0);
-            for (key, what) in view::SHORTCUTS {
-                let cap = RECT { left: ix, top: cy + px(2.0), right: ix + key_w, bottom: cy + row_h - px(4.0) };
-                gfx::round_rect(dc, &cap, px(8.0), Some(gfx::mix(palette::TEAL, palette::CARD, 0.07)),
-                                gfx::mix(palette::TEAL, palette::CARD, 0.45), px(1.0));
-                gfx::text(dc, hs.font_mono, palette::TEAL, key, &cap, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            for (keys, what) in view::SHORTCUTS {
+                let mut kx = ix;
+                let (top, bottom) = (cy + px(4.0), cy + row_h - px(5.0));
+                for (i, key) in keys.iter().enumerate() {
+                    if i > 0 {
+                        gfx::text(dc, hs.font_normal, palette::MUTED, "+",
+                                  &RECT { left: kx, top, right: kx + plus_w, bottom },
+                                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                        kx += plus_w;
+                    }
+                    let w = cap_w(key);
+                    // Kapak: alt kenarı biraz kalın, basılabilir tuş gibi.
+                    let shadow = RECT { left: kx, top: top + px(2.0), right: kx + w, bottom: bottom + px(2.0) };
+                    gfx::round_rect(dc, &shadow, px(7.0), Some(gfx::mix(palette::TEAL, palette::CARD, 0.22)),
+                                    gfx::mix(palette::TEAL, palette::CARD, 0.22), px(1.0));
+                    let cap = RECT { left: kx, top, right: kx + w, bottom };
+                    gfx::round_rect(dc, &cap, px(7.0), Some(gfx::mix(palette::TEAL, palette::CARD, 0.09)),
+                                    gfx::mix(palette::TEAL, palette::CARD, 0.55), px(1.0));
+                    gfx::text(dc, hs.font_key, palette::TEAL, key, &cap, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                    kx += w;
+                }
                 gfx::text(dc, hs.font_normal, palette::TEXT, what,
-                          &RECT { left: ix + key_w + px(12.0), top: cy, right: ix + inner, bottom: cy + row_h },
+                          &RECT { left: ix + column, top: cy, right: ix + inner, bottom: cy + row_h },
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
                 cy += row_h;
             }
@@ -563,7 +571,7 @@ pub fn run(bridge: Arc<Bridge<WinPlatform>>, actions: Sender<Action>) -> Result<
                                     null());
         let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN;
         let scale = dpi as f32 / 96.0;
-        let mut outer = RECT { left: 0, top: 0, right: (460.0 * scale) as i32, bottom: (584.0 * scale) as i32 };
+        let mut outer = RECT { left: 0, top: 0, right: (500.0 * scale) as i32, bottom: (596.0 * scale) as i32 };
         AdjustWindowRectEx(&mut outer, style, 0, 0);
         let status = CreateWindowExW(0, status_class.as_ptr(), wide("ChatGPT Dikte — Durum").as_ptr(), style,
                                      CW_USEDEFAULT, CW_USEDEFAULT, outer.right - outer.left, outer.bottom - outer.top,
@@ -584,7 +592,7 @@ pub fn run(bridge: Arc<Bridge<WinPlatform>>, actions: Sender<Action>) -> Result<
                 font_label: font("Bahnschrift", 8, 400, dpi),
                 font_bold: font("Segoe UI Semibold", 10, 600, dpi),
                 font_normal: font("Segoe UI", 10, 400, dpi),
-                font_mono: font("Consolas", 10, 400, dpi),
+                font_key: font("Segoe UI Semibold", 9, 600, dpi),
                 taskbar_created: RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()),
             }))
         });

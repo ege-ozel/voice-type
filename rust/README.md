@@ -77,7 +77,8 @@ Siyah zemin + neon vurgu: HAZIR teal, DİNLİYOR neon pembe (yanıp sönen kayı
 elektrik mavisi, YAPIŞTIRILDI sarı, HATA kırmızı, BAĞLI DEĞİL gri. Parlama ucuz yoldan yapılır: metin ve
 çerçeve, zemine karıştırılmış sönük renklerle birkaç piksel kaydırılarak altına çizilir. Alfa karıştırma,
 katmanlı pencere ya da animasyon döngüsü yoktur; çizim yalnızca durum değişince yapılır (dinlerken kayıt
-noktası için saniyede ~1,5 kez). Başlıklar Bahnschrift'tir (Windows 10+); yoksa Windows en yakın yazı
+noktası için saniyede ~1,5 kez). Rozetteki mikrofon, uygulama simgesindeki çizimin içi boş hâlidir (`icon::glyph`, yumuşak kenarlı, durum
+renginde). Durum penceresinde kısayolların her tuşu ayrı kapak olarak çizilir. Başlıklar Bahnschrift'tir (Windows 10+); yoksa Windows en yakın yazı
 tipini seçer. Windows 11'de durum penceresinin başlık çubuğu ve kenarlığı da temaya uyar.
 
 ## Kod düzeni

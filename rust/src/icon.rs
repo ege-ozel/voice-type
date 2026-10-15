@@ -103,6 +103,32 @@ pub fn render(size: usize) -> Vec<u8> {
     out
 }
 
+/// Rozet için yalnızca mikrofon (içi boş, zeminsiz): `size` x `size`, önceden çarpılmış alfalı BGRA,
+/// satırlar yukarıdan aşağı (GDI `AlphaBlend` biçimi). `stroke` çizgi kalınlığı (px).
+pub fn glyph(size: usize, stroke: f32, color: u32) -> Vec<u8> {
+    let s = size as f32;
+    let unit = s / 24.0;
+    let glow_width = stroke * 1.1;
+    let [r, g, b] = rgb(color);
+    let mut out = vec![0u8; size * size * 4];
+    for y in 0..size {
+        for x in 0..size {
+            let gx = (x as f32 + 0.5) / unit;
+            let gy = (y as f32 + 0.5) / unit;
+            let d = mic(gx, gy, false) * unit - stroke / 2.0;
+            let line = clamp01(0.5 - d);
+            let k = d.max(0.0) / glow_width;
+            let a = line + (1.0 - line) * 0.3 / (1.0 + k * k);
+            let o = (y * size + x) * 4;
+            out[o] = (b * a).round() as u8;
+            out[o + 1] = (g * a).round() as u8;
+            out[o + 2] = (r * a).round() as u8;
+            out[o + 3] = (a * 255.0).round() as u8;
+        }
+    }
+    out
+}
+
 fn crc32(data: &[u8]) -> u32 {
     let mut crc = !0u32;
     for &b in data {
@@ -186,6 +212,20 @@ mod tests {
             let [r, g, b, _] = pixel(&img, size, 2, size / 2);
             assert!(r < 60 && g < 80 && b < 80, "{size}: {r},{g},{b}");
         }
+    }
+
+    #[test]
+    fn glyph_is_hollow_with_transparent_corners() {
+        let size = 48;
+        let img = glyph(size, 2.5, TEAL);
+        let unit = size as f32 / 24.0;
+        let at = |gx: f32, gy: f32| pixel(&img, size, (gx * unit) as usize, (gy * unit) as usize);
+        assert!(at(0.5, 0.5)[3] < 40, "köşe neredeyse saydam");
+        assert!(at(12.0, 8.75)[3] < 120, "kapsülün içi boş");
+        assert_eq!(at(12.0 - 3.25, 8.75)[3], 255, "kapsül çizgisi");
+        let [b, g, r, a] = at(12.0, 20.25);
+        assert_eq!(a, 255);
+        assert_eq!([r, g, b], [0x2e, 0xf2, 0xd0], "tam opak noktada renk aynen");
     }
 
     #[test]
