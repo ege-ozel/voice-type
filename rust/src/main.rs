@@ -4,6 +4,8 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 mod bridge;
+#[cfg(test)]
+mod icon;
 mod server;
 mod text;
 mod view;

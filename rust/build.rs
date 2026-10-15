@@ -1,70 +1,19 @@
-//! Windows için: tepsi/EXE simgesini (yeşil yuvarlak kare + beyaz mikrofon, tray_app.make_icon ile
-//! aynı çizim) .ico olarak üretir ve uygulama bildirimiyle (DPI, ortak denetimler) EXE'ye gömer.
+//! Windows için: tepsi/EXE simgesini (`src/icon.rs`: koyu kare + neon çizgi mikrofon) .ico olarak
+//! üretir ve uygulama bildirimiyle (DPI, ortak denetimler) EXE'ye gömer.
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-fn rounded(px: f32, py: f32, (x0, y0, x1, y1): (f32, f32, f32, f32), r: f32) -> bool {
-    if px < x0 || px > x1 || py < y0 || py > y1 {
-        return false;
-    }
-    let dx = (x0 + r - px).max(px - (x1 - r)).max(0.0);
-    let dy = (y0 + r - py).max(py - (y1 - r)).max(0.0);
-    dx * dx + dy * dy <= r * r
-}
+#[path = "src/icon.rs"]
+mod icon;
 
-fn ellipse(px: f32, py: f32, cx: f32, cy: f32, rx: f32, ry: f32) -> bool {
-    let (dx, dy) = ((px - cx) / rx, (py - cy) / ry);
-    dx * dx + dy * dy <= 1.0
-}
-
-/// 64x64 tasarım alanında bir noktanın rengi (RGBA).
-fn sample(px: f32, py: f32) -> [f32; 4] {
-    let white = [255.0, 255.0, 255.0, 255.0];
-    let mic = rounded(px, py, (25.0, 11.0, 39.0, 36.0), 7.0);
-    // PIL arc((18,23,46,46), 0, 180, width=4): elipsin alt yarısı, 4 birim kalınlık.
-    let (cx, cy, rx, ry) = (32.0, 34.5, 14.0, 11.5);
-    let arc = py >= cy && ellipse(px, py, cx, cy, rx, ry) && !ellipse(px, py, cx, cy, rx - 4.0, ry - 4.0);
-    let stem = (30.0..=34.0).contains(&px) && (46.0..=53.0).contains(&py);
-    let base = (24.0..=40.0).contains(&px) && (51.0..=55.0).contains(&py);
-    if mic || arc || stem || base {
-        white
-    } else if rounded(px, py, (2.0, 2.0, 62.0, 62.0), 16.0) {
-        [0x16 as f32, 0x73 as f32, 0x4a as f32, 255.0]
-    } else {
-        [0.0; 4]
-    }
-}
-
-/// Kenar yumuşatmalı BGRA, satırlar aşağıdan yukarı (BMP sırası).
-fn render(size: usize) -> Vec<u8> {
-    const SS: usize = 4;
-    let scale = 64.0 / size as f32;
-    let mut out = vec![0u8; size * size * 4];
-    for y in 0..size {
-        for x in 0..size {
-            let mut acc = [0.0f32; 4];
-            for sy in 0..SS {
-                for sx in 0..SS {
-                    let px = (x as f32 + (sx as f32 + 0.5) / SS as f32) * scale;
-                    let py = (y as f32 + (sy as f32 + 0.5) / SS as f32) * scale;
-                    let c = sample(px, py);
-                    let a = c[3] / 255.0;
-                    for i in 0..3 {
-                        acc[i] += c[i] * a;
-                    }
-                    acc[3] += c[3];
-                }
-            }
-            let n = (SS * SS) as f32;
-            let alpha = acc[3] / n;
-            let color = |i: usize| if alpha > 0.0 { (acc[i] / n) / (alpha / 255.0) } else { 0.0 };
-            let row = size - 1 - y;
-            let o = (row * size + x) * 4;
-            out[o] = color(2).round() as u8;
-            out[o + 1] = color(1).round() as u8;
-            out[o + 2] = color(0).round() as u8;
-            out[o + 3] = alpha.round() as u8;
+/// BGRA, satırlar aşağıdan yukarı (BMP sırası).
+fn bmp_pixels(size: usize) -> Vec<u8> {
+    let rgba = icon::render(size);
+    let mut out = Vec::with_capacity(rgba.len());
+    for row in rgba.chunks(size * 4).rev() {
+        for p in row.chunks(4) {
+            out.extend_from_slice(&[p[2], p[1], p[0], p[3]]);
         }
     }
     out
@@ -82,7 +31,7 @@ fn ico(sizes: &[usize]) -> Vec<u8> {
             img.extend_from_slice(&1u16.to_le_bytes());
             img.extend_from_slice(&32u16.to_le_bytes());
             img.extend_from_slice(&[0u8; 24]);
-            img.extend_from_slice(&render(s));
+            img.extend_from_slice(&bmp_pixels(s));
             let mask_row = s.div_ceil(32) * 4;
             img.extend(std::iter::repeat_n(0u8, mask_row * s));
             img
@@ -125,6 +74,7 @@ const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/icon.rs");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }

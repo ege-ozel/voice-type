@@ -5,7 +5,8 @@ Son güncelleme: 2026-10-15. Dal: `claude/repo-identification-status-84ct1u`.
 ## Durum
 
 Python köprüsü (`browser_bridge.py`, `tray_app.py`, `status_window.py`, `clipboard_badge.py`) Rust ile
-`rust/` klasöründe yeniden yazıldı. Python dosyaları ve Chrome eklentisi (`extension/`) değişmedi.
+`rust/` klasöründe yeniden yazıldı. Python dosyaları değişmedi. Eklentide yalnızca simgeler eklendi (`extension/icons/`, manifest 2.3.0);
+kod ve protokol aynı.
 
 Yapılanlar:
 - Tek süreçli Windows EXE (~463 KB, MinGW ile). Kısayollar `RegisterHotKey` ile; arayüz düz Win32 + GDI;
@@ -27,11 +28,9 @@ Bilerek düzeltilmeyen: `make_config.py`, `bridge-config.json` varken `extension
 
 ## Yapılacaklar
 
-1. **Push.** Önceki oturumda GitHub 403 verdiği için commit'ler push edilemedi; bu dosya ve kod
-   repoya kullanıcının uyguladığı yamayla geldi. Dalın uzakta olduğunu kontrol et.
-2. **CI.** `.github/workflows/rust.yml` Windows'ta `cargo test` + `cargo build --release` çalıştırıp
-   EXE'yi yapıt olarak yükler. İlk çalıştırma henüz yapılmadı; kırmızıysa düzelt (MSVC derlemesi hiç
-   denenmedi, yalnızca MinGW ile çapraz derlendi).
+1. ~~Push~~ ve ~~CI~~: dal GitHub'da, `rust` iş akışı yeşil. MSVC derlemesi yerelde de denendi (EXE 384 KB).
+2. **Simgeler (yeni):** `rust/src/icon.rs` tek kaynak: EXE/tepsi `.ico` ve eklenti PNG'leri. Kullanıcı
+   eklentiyi `chrome://extensions` → yenile ile yeniden yüklemeli. Geri bildirime göre ince ayar.
 3. **Gerçek Windows'ta uçtan uca deneme** (kullanıcıyla): `rust/README.md` → "Mevcut kurulumda uçtan uca
    deneme". Özellikle: gerçek ChatGPT sekmesiyle dikte, Windows Terminal'de Ctrl+Shift+V, tam ekran
    terminale odak geçişi, elle durdurma, tepsi menüsü, DPI ölçekleme (125/150%), Bahnschrift ile rozet

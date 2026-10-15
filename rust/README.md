@@ -8,7 +8,7 @@ olduğu gibi çalışır. Aynı `bridge-config.json` dosyasını kullanır ve g�
 
 | | Python (PyInstaller) | Rust |
 |---|---|---|
-| EXE | ~18 MB | ~0.45 MB (MinGW), MSVC ile daha küçük |
+| EXE | ~18 MB | ~0.38 MB (MSVC), ~0.45 MB (MinGW) |
 | Süreç | 2 (açıcı + asıl) | 1 |
 | Kısayol | `keyboard` (düşük seviyeli klavye kancası) | `RegisterHotKey` |
 | Arayüz | Tk + pystray + Pillow | Düz Win32 + GDI |
@@ -89,7 +89,10 @@ tipini seçer. Windows 11'de durum penceresinin başlık çubuğu ve kenarlığ�
 - `src/view.rs`: rozet, tepsi ipucu ve durum penceresi metinleri.
 - `src/win/`: Win32 uygulaması (pano, SendInput, odak, bip, günlük, pencereler, tepsi); `gfx.rs` neon
   çizim yardımcıları.
-- `build.rs`: simgeyi (yeşil yuvarlak kare + mikrofon) üretip EXE'ye gömer.
+- `src/icon.rs`: simge çizimi (koyu yuvarlak kare + neon teal çizgi mikrofon, SDF ile yumuşatılmış) ve
+  bağımlılıksız PNG yazıcı. `build.rs` bunu EXE/tepsi simgesi olarak gömer; eklentinin
+  `extension/icons/` PNG'leri de buradan üretilir (`UPDATE_ICONS=1 cargo test icon`; test, PNG'ler
+  çizimle aynı değilse düşer).
 
 ## Python sürümüne göre düzeltilen hatalar
 
