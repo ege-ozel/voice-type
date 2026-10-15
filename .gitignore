@@ -1,0 +1,11 @@
+# Kuruluma özel gizli anahtar — asla commit etme (make_config.py ile üretilir)
+bridge-config.json
+extension/config.js
+
+.venv/
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+*.log
