@@ -1,4 +1,5 @@
 //! Windows girişi: tek kopya kontrolü, yapılandırma, HTTP sunucusu, kısayol işçisi ve arayüz.
+pub mod gfx;
 pub mod platform;
 pub mod ui;
 

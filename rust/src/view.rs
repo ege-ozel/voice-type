@@ -17,24 +17,41 @@ pub enum BadgePhase {
     Error,
 }
 
+/// Siyah zemin + neon vurgu paleti (0xRRGGBB).
+pub mod palette {
+    pub const TEAL: u32 = 0x2ef2d0;
+    pub const PINK: u32 = 0xff2e88;
+    pub const BLUE: u32 = 0x3d9bff;
+    pub const YELLOW: u32 = 0xfcee0a;
+    pub const RED: u32 = 0xff3b4e;
+    pub const GRAY: u32 = 0x6e7681;
+    /// Zemin: GitHub karanlık temasından biraz daha koyu.
+    pub const BG: u32 = 0x07090d;
+    pub const BG_TOP: u32 = 0x0d1117;
+    pub const CARD: u32 = 0x10151c;
+    pub const LINE: u32 = 0x262d36;
+    pub const TEXT: u32 = 0xd6dee6;
+    pub const MUTED: u32 = 0x8b949e;
+}
+
 pub struct BadgeStyle {
     pub title: &'static str,
     pub subtitle: &'static str,
-    pub color: u32, // 0xRRGGBB
-    pub ink: u32,
+    pub accent: u32,
 }
 
 impl BadgePhase {
     pub fn style(self) -> BadgeStyle {
-        let (title, subtitle, color, ink) = match self {
-            BadgePhase::Closed => ("BAĞLI DEĞİL", "chatgpt.com sekmesini açın", 0x555b63, 0xffffff),
-            BadgePhase::Ready => ("HAZIR", "Ctrl+Alt+Space: konuş", 0x18864b, 0xffffff),
-            BadgePhase::Listening => ("DİNLİYOR", "Ctrl+Alt+Space: bitir", 0xc62828, 0xffffff),
-            BadgePhase::Transcribing => ("YAZIYOR…", "ChatGPT yazıya döküyor", 0x1f5fbf, 0xffffff),
-            BadgePhase::Copied => ("YAPIŞTIRILDI", "Metin panoda", 0xe8881b, 0x20160b),
-            BadgePhase::Error => ("HATA", "Ayrıntı için simgeye tıkla", 0x8e2424, 0xffffff),
+        use palette::*;
+        let (title, subtitle, accent) = match self {
+            BadgePhase::Closed => ("BAĞLI DEĞİL", "chatgpt.com sekmesini açın", GRAY),
+            BadgePhase::Ready => ("HAZIR", "Ctrl+Alt+Space: konuş", TEAL),
+            BadgePhase::Listening => ("DİNLİYOR", "Ctrl+Alt+Space: bitir", PINK),
+            BadgePhase::Transcribing => ("YAZIYOR…", "ChatGPT yazıya döküyor", BLUE),
+            BadgePhase::Copied => ("YAPIŞTIRILDI", "Metin panoda", YELLOW),
+            BadgePhase::Error => ("HATA", "Ayrıntı için simgeye tıkla", RED),
         };
-        BadgeStyle { title, subtitle, color, ink }
+        BadgeStyle { title, subtitle, accent }
     }
 }
 
@@ -83,35 +100,41 @@ pub fn tray_tip(s: &Snapshot) -> String {
     prefix(&tip, 120).to_string()
 }
 
-/// Durum penceresinin satırları.
+/// Durum penceresinin içeriği.
 pub struct StatusText {
-    pub heading: String,
-    pub heading_color: u32,
+    pub heading: &'static str,
+    pub accent: u32,
     pub connection: &'static str,
     pub transfer: &'static str,
-    pub transfer_color: u32,
-    pub checks: String,
+    pub transfer_failed: bool,
+    /// (tamam mı, metin)
+    pub checks: Vec<(bool, &'static str)>,
     pub details: String,
 }
 
-pub const HELP: &str = "Ctrl+Alt+Space — dikteyi başlat / bitir ve yapıştır\n\
-                        Ctrl+Alt+Enter — bitir, yapıştır ve Enter gönder\n\
-                        Ctrl+Alt+Backspace — iptal\n\
-                        Metin, bitirdiğin anda odakta olan pencereye gider.";
+pub const SHORTCUTS: [(&str, &str); 3] = [
+    ("Ctrl+Alt+Space", "başlat / bitir ve yapıştır"),
+    ("Ctrl+Alt+Enter", "bitir, yapıştır ve Enter"),
+    ("Ctrl+Alt+Backspace", "iptal"),
+];
+pub const SHORTCUT_NOTE: &str = "Metin, bitirdiğin anda odakta olan pencereye gider.";
 
 pub fn status_text(s: &Snapshot) -> StatusText {
-    let busy = s.phase != Phase::Idle;
-    let phase_text = match s.phase {
-        Phase::Idle => "Hazır",
-        Phase::Starting => "Dikte başlatılıyor…",
-        Phase::Listening => "Dinliyor",
-        Phase::Transcribing => "ChatGPT yazıya döküyor…",
+    use palette::*;
+    let (heading, accent) = match s.phase {
+        Phase::Starting => ("BAŞLATILIYOR…", PINK),
+        Phase::Listening => ("DİNLİYOR", PINK),
+        Phase::Transcribing => ("YAZIYA DÖKÜLÜYOR…", BLUE),
+        Phase::Idle if s.connected => ("HAZIR", TEAL),
+        Phase::Idle => ("BAĞLI DEĞİL", GRAY),
     };
     let t = &s.transfer;
-    let mut checks = String::from(if t.copied { "✓ Metin panoya kopyalandı" } else { "— Panoya kopyalama bekleniyor" });
-    checks += if t.paste_sent { "\n✓ Yapıştırma kısayolu gönderildi" } else { "\n— Yapıştırma kısayolu gönderilmedi" };
+    let mut checks = vec![
+        (t.copied, if t.copied { "Metin panoya kopyalandı" } else { "Panoya kopyalama bekleniyor" }),
+        (t.paste_sent, if t.paste_sent { "Yapıştırma kısayolu gönderildi" } else { "Yapıştırma kısayolu gönderilmedi" }),
+    ];
     if t.enter_sent {
-        checks += "\n✓ Enter gönderildi";
+        checks.push((true, "Enter gönderildi"));
     }
     let mut details = if t.time.is_empty() {
         "Henüz metin aktarılmadı.".to_string()
@@ -127,8 +150,8 @@ pub fn status_text(s: &Snapshot) -> StatusText {
         details += &format!("\n{}", t.error);
     }
     StatusText {
-        heading: if s.connected || busy { format!("● {phase_text}") } else { "● ChatGPT bağlı değil".into() },
-        heading_color: if busy { 0xc62828 } else if s.connected { 0x16734a } else { 0x9c5f0b },
+        heading,
+        accent,
         connection: if s.connected {
             "ChatGPT sekmesi bağlı."
         } else {
@@ -140,7 +163,7 @@ pub fn status_text(s: &Snapshot) -> StatusText {
             Stage::Sent => "Yapıştırıldı",
             Stage::Error => "Aktarım tamamlanamadı",
         },
-        transfer_color: if t.stage == Stage::Error { 0xa52a2a } else { 0x233a2d },
+        transfer_failed: t.stage == Stage::Error,
         checks,
         details,
     }
@@ -184,8 +207,10 @@ mod tests {
         assert_eq!(tray_tip(&snap(Phase::Idle, false)), "Dikte: ChatGPT sekmesi bağlı değil");
         assert_eq!(tray_tip(&snap(Phase::Listening, true)), "Dikte: dinliyor — bitirmek için Ctrl+Alt+Space");
         let s = status_text(&snap(Phase::Idle, false));
-        assert_eq!(s.heading, "● ChatGPT bağlı değil");
+        assert_eq!((s.heading, s.accent), ("BAĞLI DEĞİL", palette::GRAY));
         assert_eq!(s.details, "Henüz metin aktarılmadı.");
-        assert_eq!(status_text(&snap(Phase::Listening, true)).heading, "● Dinliyor");
+        assert_eq!(s.checks, vec![(false, "Panoya kopyalama bekleniyor"), (false, "Yapıştırma kısayolu gönderilmedi")]);
+        let listening = status_text(&snap(Phase::Listening, true));
+        assert_eq!((listening.heading, listening.accent), ("DİNLİYOR", palette::PINK));
     }
 }

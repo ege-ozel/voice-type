@@ -71,6 +71,15 @@ powershell -ExecutionPolicy Bypass -File rust\measure.ps1 -Exe dist\ChatGPT-Dikt
 Betik, uygulamanın `/status` isteğine yanıt verdiği ana kadar geçen süreyi, 10 saniye sonraki working set
 ve private bellek toplamını (tüm süreçler) ve EXE boyutunu yazar, sonra süreci kapatır.
 
+## Görünüm
+
+Siyah zemin + neon vurgu: HAZIR teal, DİNLİYOR neon pembe (yanıp sönen kayıt noktasıyla), YAZIYOR
+elektrik mavisi, YAPIŞTIRILDI sarı, HATA kırmızı, BAĞLI DEĞİL gri. Parlama ucuz yoldan yapılır: metin ve
+çerçeve, zemine karıştırılmış sönük renklerle birkaç piksel kaydırılarak altına çizilir. Alfa karıştırma,
+katmanlı pencere ya da animasyon döngüsü yoktur; çizim yalnızca durum değişince yapılır (dinlerken kayıt
+noktası için saniyede ~1,5 kez). Başlıklar Bahnschrift'tir (Windows 10+); yoksa Windows en yakın yazı
+tipini seçer. Windows 11'de durum penceresinin başlık çubuğu ve kenarlığı da temaya uyar.
+
 ## Kod düzeni
 
 - `src/bridge.rs`: durum makinesi (aşamalar, oturum, owner, komut kuyruğu, zaman aşımları, yapıştırma
@@ -78,7 +87,8 @@ ve private bellek toplamını (tüm süreçler) ve EXE boyutunu yazar, sonra sü
 - `src/server.rs`: std::net ile HTTP sunucusu, yetkilendirme, CORS.
 - `src/text.rs`: metin temizleme, pencereye göre Ctrl+V / Ctrl+Shift+V.
 - `src/view.rs`: rozet, tepsi ipucu ve durum penceresi metinleri.
-- `src/win/`: Win32 uygulaması (pano, SendInput, odak, bip, günlük, pencereler, tepsi).
+- `src/win/`: Win32 uygulaması (pano, SendInput, odak, bip, günlük, pencereler, tepsi); `gfx.rs` neon
+  çizim yardımcıları.
 - `build.rs`: simgeyi (yeşil yuvarlak kare + mikrofon) üretip EXE'ye gömer.
 
 ## Python sürümüne göre düzeltilen hatalar
