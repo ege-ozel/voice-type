@@ -1,4 +1,7 @@
-**English** | [Türkçe](README.tr.md)
+<p align="center">
+  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/README-English-2ef2d0?style=for-the-badge"></a>
+  <a href="README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/README-T%C3%BCrk%C3%A7e-ff2e88?style=for-the-badge"></a>
+</p>
 
 # voice-type: voice typing into any window (Windows)
 
