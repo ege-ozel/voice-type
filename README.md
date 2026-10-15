@@ -3,6 +3,9 @@
 ChatGPT web sitesinin diktesini kullanır (karışık dilleri iyi anlar). OpenAI API'si çağrılmaz;
 API anahtarı veya ücret gerekmez. ChatGPT hesabınızın dikte sınırları geçerlidir.
 
+> **Rust sürümü:** Aynı köprünün ~0,5 MB'lık, tek süreçli Rust karşılığı `rust/` klasöründe
+> ([rust/README.md](rust/README.md)). Eklenti ve `bridge-config.json` ikisiyle de çalışır.
+
 ## Kullanım
 
 Terminalde (veya herhangi bir pencerede) çalışırken:

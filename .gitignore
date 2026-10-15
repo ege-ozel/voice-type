@@ -9,3 +9,6 @@ dist/
 __pycache__/
 *.pyc
 *.log
+
+# Rust
+rust/target/
