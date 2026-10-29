@@ -1373,3 +1373,108 @@ impl LogExt for Bridge<WinPlatform> {
         self.platform.log(line);
     }
 }
+
+/// README görselleri: rozetin her durumu, uygulamanın kendi çizim koduyla.
+/// `BADGE_SHOTS=<klasör> cargo test badge_shots -- --ignored` ham RGBA yazar (`<ad>_<g>x<y>.rgba`);
+/// `python tools/rgba_to_png.py <klasör> ../docs/badge` sıkıştırılmış PNG'ye çevirir.
+#[cfg(test)]
+mod shots {
+    use super::*;
+    use std::ffi::c_void;
+
+    /// 2x (192 DPI) çizilir; README'de yarı boyutta gösterilir.
+    const DPI: i32 = 192;
+
+    fn setup() {
+        H.with(|h| {
+            h.set(Some(Handles {
+                host: null_mut(),
+                badge: null_mut(),
+                status: null_mut(),
+                scale: DPI as f32 / 96.0,
+                icon_small: null_mut(),
+                font_badge_title: font("Bahnschrift SemiBold", 13, 400, DPI),
+                font_badge_sub: font("Segoe UI", 8, 400, DPI),
+                font_heading: font("Bahnschrift SemiBold", 22, 400, DPI),
+                font_label: font("Bahnschrift", 8, 400, DPI),
+                font_bold: font("Segoe UI Semibold", 10, 600, DPI),
+                font_normal: font("Segoe UI", 10, 400, DPI),
+                font_key: font("Segoe UI Semibold", 9, 600, DPI),
+                taskbar_created: 0,
+            }))
+        });
+    }
+
+    /// Rozeti `open` ise genişlemiş, değilse kare hâliyle çizer; köşe dışı saydam RGBA döner.
+    fn shot(phase: BadgePhase, subtitle: &str, open: bool) -> (i32, i32, Vec<u8>) {
+        let pulse = matches!(phase, BadgePhase::Listening | BadgePhase::Permission);
+        MEM.with(|m| m.borrow_mut().badge = Some((phase, subtitle.to_string(), pulse)));
+        let side = px(BADGE_SIDE);
+        let full = badge_full_width(phase.style().title, subtitle);
+        BADGE.with(|b| {
+            let mut b = b.borrow_mut();
+            b.grow_left = false;
+            b.full_w = full;
+        });
+        let (w, height) = (if open { full } else { side }, side);
+        unsafe {
+            let screen = GetDC(null_mut());
+            let mem = CreateCompatibleDC(screen);
+            let mut info: BITMAPINFO = zeroed();
+            info.bmiHeader.biSize = size_of::<BITMAPINFOHEADER>() as u32;
+            info.bmiHeader.biWidth = w;
+            info.bmiHeader.biHeight = -height; // yukarıdan aşağı
+            info.bmiHeader.biPlanes = 1;
+            info.bmiHeader.biBitCount = 32;
+            info.bmiHeader.biCompression = BI_RGB;
+            let mut bits: *mut c_void = null_mut();
+            let dib = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
+            let old = SelectObject(mem, dib);
+            SetBkMode(mem, TRANSPARENT as _);
+            let rc = RECT { left: 0, top: 0, right: w, bottom: height };
+            gfx::fill(mem, &rc, BADGE_KEY);
+            let region = CreateRoundRectRgn(0, 0, w + 1, height + 1, px(14.0), px(14.0));
+            SelectClipRgn(mem, region);
+            draw_badge(mem, &rc);
+            SelectClipRgn(mem, null_mut());
+            DeleteObject(region);
+            GdiFlush();
+            let bgra = std::slice::from_raw_parts(bits as *const u8, (w * height * 4) as usize);
+            let rgba: Vec<u8> = bgra.chunks(4).flat_map(|p| {
+                let key = (p[2], p[1], p[0]) == (0xff, 0x00, 0xff);
+                [p[2], p[1], p[0], if key { 0 } else { 255 }]
+            }).collect();
+            SelectObject(mem, old);
+            DeleteObject(dib);
+            DeleteDC(mem);
+            ReleaseDC(null_mut(), screen);
+            (w, height, rgba)
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn badge_shots() {
+        let dir = std::path::PathBuf::from(std::env::var("BADGE_SHOTS").expect("BADGE_SHOTS=<klasör>"));
+        std::fs::create_dir_all(&dir).unwrap();
+        setup();
+        let states = [
+            ("ready", BadgePhase::Ready, "F3: konuş • F4 ile bitir: + Enter"),
+            ("starting", BadgePhase::Starting, "Mikrofon açılıyor"),
+            ("permission", BadgePhase::Permission, "Chrome'da mikrofona izin ver"),
+            ("listening", BadgePhase::Listening, "F3: bitir • F4: + Enter"),
+            ("transcribing", BadgePhase::Transcribing, "OpenAI yazıya döküyor"),
+            ("pasted", BadgePhase::Copied, "128 karakter + Enter"),
+            ("copied", BadgePhase::Clipboard, "128 karakter • Ctrl+V"),
+            ("error", BadgePhase::Error, "Ses algılanmadı; metin boş."),
+            ("closed", BadgePhase::Closed, "chatgpt.com sekmesini açın"),
+        ];
+        for (name, phase, subtitle) in states {
+            for open in [false, true] {
+                let (w, height, rgba) = shot(phase, subtitle, open);
+                let kind = if open { "open" } else { "square" };
+                std::fs::write(dir.join(format!("{name}-{kind}_{w}x{height}.rgba")), rgba).unwrap();
+            }
+        }
+    }
+}

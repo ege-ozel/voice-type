@@ -102,8 +102,8 @@ ve private bellek toplamını (tüm süreçler) ve EXE boyutunu yazar, sonra sü
 
 ## Görünüm
 
-Siyah zemin + neon vurgu: HAZIR teal, DİNLİYOR neon pembe (yanıp sönen kayıt noktasıyla), YAZIYOR
-elektrik mavisi, YAPIŞTIRILDI sarı, HATA kırmızı, BAĞLI DEĞİL gri. Parlama ucuz yoldan yapılır: metin ve
+Siyah zemin + soluk (mat) vurgu (3.2.4): HAZIR mavimsi teal, DİNLİYOR gül pembesi (yanıp sönen kayıt noktasıyla), YAZIYOR
+mavi, YAPIŞTIRILDI sarı, HATA kırmızı, BAĞLI DEĞİL gri. Parlama ucuz yoldan yapılır: metin ve
 çerçeve, zemine karıştırılmış sönük renklerle birkaç piksel kaydırılarak altına çizilir. Alfa karıştırma,
 katmanlı pencere ya da sürekli animasyon döngüsü yoktur; çizim yalnızca durum değişince yapılır (dinlerken
 kayıt noktası için saniyede ~1,5 kez). Rozet normalde 60×60'lık karedir; YAPIŞTIRILDI / KOPYALANDI / HATA /
@@ -121,6 +121,8 @@ tipini seçer. Windows 11'de durum penceresinin başlık çubuğu ve kenarlığ�
 - `src/text.rs`: metin temizleme (terminalde tek satır, başka yerde satırlar korunur), pencereye göre Ctrl+V / Ctrl+Shift+V.
 - `src/openai.rs`: WAV, multipart gövde, yanıt/hata çözme, anahtar ve model seçimi.
 - `src/view.rs`: rozet, tepsi ipucu ve durum penceresi metinleri.
+- `tools/rgba_to_png.py`: README rozet görsellerini (`docs/badge/`) PNG'ye çevirir; görseller
+  `BADGE_SHOTS=<klasör> cargo test badge_shots -- --ignored` ile uygulamanın çizim koduyla üretilir.
 - `src/dock.rs`: rozetin kenara yapışma, genişleme yönü ve geçiş eğrisi (platformdan bağımsız, testli).
 - `src/win/`: Win32 uygulaması (pano, SendInput, odak, bip, günlük, pencereler, tepsi; `audio.rs` mikrofon,
   `http.rs` WinHTTP); `gfx.rs` neon

@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/README-English-2ef2d0?style=for-the-badge"></a>
-  <a href="README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/README-T%C3%BCrk%C3%A7e-ff2e88?style=for-the-badge"></a>
+  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/README-English-5ab3b9?style=for-the-badge"></a>
+  <a href="README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/README-T%C3%BCrk%C3%A7e-d0608f?style=for-the-badge"></a>
 </p>
 
 # voice-type: voice typing into any window (Windows)
@@ -39,11 +39,28 @@ The text goes to the window that has focus at the moment you finish: start talki
 target window, finish. Text is pasted with Ctrl+V (Ctrl+Shift+V only in Alacritty and WezTerm). Line breaks are kept, except in terminals where the text is joined into one line. With **copy to clipboard
 only** (right-click menu), no keys are sent at all.
 
-The badge is a small microphone square whose color shows the state: READY, LISTENING (with a blinking
-dot), TRANSCRIBING, PASTED / COPIED, ERROR (the UI itself is in Turkish). It slides open for a few seconds
-on PASTED / COPIED / ERROR, and on hover it shows both finish shortcuts. Drag it anywhere: it snaps to the
-nearest screen edge (corners included, never over the taskbar) and remembers the spot. Click it or
-double-click the tray icon for the status window.
+## The badge
+
+A small microphone square stays on screen; its color shows the state. It slides open on its own when
+there is something to read (pasted, copied, error, waiting for permission) and on hover, where it shows
+both shortcuts. Drag it anywhere: it snaps to the nearest screen edge (corners included, never over the
+taskbar) and remembers the spot. Click it, or double-click the tray icon, for the status window;
+right-click it for the menu. The UI text is Turkish.
+
+| State | Badge | Open (hover / by itself) |
+|---|:---:|---|
+| **Ready**<br><sub>idle; hover shows both shortcuts</sub> | <img src="docs/badge/ready-square.png" width="60" alt="Ready"> | <img src="docs/badge/ready-open.png" width="226" alt="Ready"> |
+| **Listening**<br><sub>recording, the dot blinks</sub> | <img src="docs/badge/listening-square.png" width="60" alt="Listening"> | <img src="docs/badge/listening-open.png" width="182" alt="Listening"> |
+| **Transcribing**<br><sub>speech is being turned into text</sub> | <img src="docs/badge/transcribing-square.png" width="60" alt="Transcribing"> | <img src="docs/badge/transcribing-open.png" width="195" alt="Transcribing"> |
+| **Pasted**<br><sub>opens by itself for 4 s</sub> | <img src="docs/badge/pasted-square.png" width="60" alt="Pasted"> | <img src="docs/badge/pasted-open.png" width="203" alt="Pasted"> |
+| **Copied**<br><sub>copy-only mode; opens by itself</sub> | <img src="docs/badge/copied-square.png" width="60" alt="Copied"> | <img src="docs/badge/copied-open.png" width="201" alt="Copied"> |
+| **Error**<br><sub>opens by itself, full message</sub> | <img src="docs/badge/error-square.png" width="60" alt="Error"> | <img src="docs/badge/error-open.png" width="214" alt="Error"> |
+| **Starting**<br><sub>ChatGPT tab: microphone opening</sub> | <img src="docs/badge/starting-square.png" width="60" alt="Starting"> | <img src="docs/badge/starting-open.png" width="187" alt="Starting"> |
+| **Permission**<br><sub>ChatGPT tab: allow the mic in Chrome; opens by itself</sub> | <img src="docs/badge/permission-square.png" width="60" alt="Permission"> | <img src="docs/badge/permission-open.png" width="243" alt="Permission"> |
+| **Not connected**<br><sub>ChatGPT tab: no chatgpt.com tab</sub> | <img src="docs/badge/closed-square.png" width="60" alt="Not connected"> | <img src="docs/badge/closed-open.png" width="216" alt="Not connected"> |
+
+<sub>Images are rendered by the app's own drawing code: `cargo test badge_shots -- --ignored` (see
+`rust/tools/rgba_to_png.py`).</sub>
 
 ## Setup
 

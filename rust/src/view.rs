@@ -29,14 +29,15 @@ pub enum BadgePhase {
     Error,
 }
 
-/// Siyah zemin + neon vurgu paleti (0xRRGGBB).
+/// Siyah zemin + soluk (mat) vurgu paleti (0xRRGGBB). Tonlar eski neon renklerle aynı, doygunluk ve
+/// parlaklık düşük; simgedeki renkler ayrı (icon.rs).
 pub mod palette {
-    pub const TEAL: u32 = 0x2ef2d0;
-    pub const PINK: u32 = 0xff2e88;
-    pub const BLUE: u32 = 0x3d9bff;
-    pub const YELLOW: u32 = 0xfcee0a;
-    pub const RED: u32 = 0xff3b4e;
-    pub const ORANGE: u32 = 0xff9f1c;
+    pub const TEAL: u32 = 0x5ab3b9; // eski 0x2ef2d0
+    pub const PINK: u32 = 0xd0608f; // eski 0xff2e88
+    pub const BLUE: u32 = 0x5c97d6; // eski 0x3d9bff
+    pub const YELLOW: u32 = 0xd8cd5a; // eski 0xfcee0a
+    pub const RED: u32 = 0xd65a66; // eski 0xff3b4e
+    pub const ORANGE: u32 = 0xd99a4f; // eski 0xff9f1c
     pub const GRAY: u32 = 0x6e7681;
     /// Zemin: GitHub karanlık temasından biraz daha koyu.
     pub const BG: u32 = 0x07090d;

@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/README-English-2ef2d0?style=for-the-badge"></a>
-  <a href="README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/README-T%C3%BCrk%C3%A7e-ff2e88?style=for-the-badge"></a>
+  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/README-English-5ab3b9?style=for-the-badge"></a>
+  <a href="README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/README-T%C3%BCrk%C3%A7e-d0608f?style=for-the-badge"></a>
 </p>
 
 # voice-type: her pencereye sesle yazma (Windows)
@@ -44,11 +44,28 @@ Metin, bitirme kısayoluna bastığın anda odakta olan pencereye gider: konuşm
 geç, bitir. Ctrl+V ile yapıştırılır (yalnızca Alacritty ve WezTerm'de Ctrl+Shift+V). Satır sonları korunur; yalnızca terminallerde metin tek satıra indirilir. Sağ tıktan **yalnızca
 panoya kopyala** seçilirse hiçbir tuş gönderilmez.
 
-Rozet, rengi durumu gösteren küçük bir mikrofon karesidir: HAZIR, DİNLİYOR (yanıp sönen noktayla),
-YAZIYOR, YAPIŞTIRILDI / KOPYALANDI, HATA. YAPIŞTIRILDI / KOPYALANDI / HATA'da birkaç saniyeliğine yumuşakça
-açılır; fareyle üstüne gelince iki bitirme kısayolunu birden gösterir. Sürükleyip istediğin yere
-bırakabilirsin: en yakın ekran kenarına yapışır (köşeler dahil, görev çubuğunun üstüne çıkmaz) ve yeri
-hatırlanır. Rozete tıklamak ya da tepsi simgesine çift tıklamak durum penceresini açar.
+## Rozet
+
+Ekranda küçük bir mikrofon karesi durur; rengi durumu gösterir. Okunacak bir şey olunca (yapıştırıldı,
+kopyalandı, hata, izin bekleniyor) kendiliğinden, fareyle üstüne gelince de yumuşakça açılır ve iki
+kısayolu birden gösterir. Sürükleyip istediğin yere bırakabilirsin: en yakın ekran kenarına yapışır
+(köşeler dahil, görev çubuğunun üstüne çıkmaz) ve yeri hatırlanır. Tıklamak ya da tepsi simgesine çift
+tıklamak durum penceresini, sağ tık menüyü açar.
+
+| Durum | Rozet | Açık hâli (fare üstünde / kendiliğinden) |
+|---|:---:|---|
+| **Hazır**<br><sub>boşta; üstüne gelince iki kısayol</sub> | <img src="docs/badge/ready-square.png" width="60" alt="Hazır"> | <img src="docs/badge/ready-open.png" width="226" alt="Hazır"> |
+| **Dinliyor**<br><sub>kayıt sürüyor, nokta yanıp söner</sub> | <img src="docs/badge/listening-square.png" width="60" alt="Dinliyor"> | <img src="docs/badge/listening-open.png" width="182" alt="Dinliyor"> |
+| **Yazıyor**<br><sub>ses yazıya dökülüyor</sub> | <img src="docs/badge/transcribing-square.png" width="60" alt="Yazıyor"> | <img src="docs/badge/transcribing-open.png" width="195" alt="Yazıyor"> |
+| **Yapıştırıldı**<br><sub>4 sn kendiliğinden açılır</sub> | <img src="docs/badge/pasted-square.png" width="60" alt="Yapıştırıldı"> | <img src="docs/badge/pasted-open.png" width="203" alt="Yapıştırıldı"> |
+| **Kopyalandı**<br><sub>yalnızca kopyala modu; kendiliğinden açılır</sub> | <img src="docs/badge/copied-square.png" width="60" alt="Kopyalandı"> | <img src="docs/badge/copied-open.png" width="201" alt="Kopyalandı"> |
+| **Hata**<br><sub>kendiliğinden açılır, mesajın tamamı</sub> | <img src="docs/badge/error-square.png" width="60" alt="Hata"> | <img src="docs/badge/error-open.png" width="214" alt="Hata"> |
+| **Başlıyor**<br><sub>ChatGPT sekmesi: mikrofon açılıyor</sub> | <img src="docs/badge/starting-square.png" width="60" alt="Başlıyor"> | <img src="docs/badge/starting-open.png" width="187" alt="Başlıyor"> |
+| **İzin bekleniyor**<br><sub>ChatGPT sekmesi: Chrome'da mikrofona izin ver; kendiliğinden açılır</sub> | <img src="docs/badge/permission-square.png" width="60" alt="İzin bekleniyor"> | <img src="docs/badge/permission-open.png" width="243" alt="İzin bekleniyor"> |
+| **Bağlı değil**<br><sub>ChatGPT sekmesi: chatgpt.com sekmesi yok</sub> | <img src="docs/badge/closed-square.png" width="60" alt="Bağlı değil"> | <img src="docs/badge/closed-open.png" width="216" alt="Bağlı değil"> |
+
+<sub>Görseller uygulamanın kendi çizim koduyla üretilir: `cargo test badge_shots -- --ignored`
+(`rust/tools/rgba_to_png.py`).</sub>
 
 ## Kurulum
 
