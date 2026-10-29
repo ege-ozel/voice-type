@@ -7,11 +7,14 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::text::{normalize_text, paste_chord, prefix, Chord, Window};
+use crate::hotkey::{Hotkeys, Slot};
+use crate::text::{is_terminal, normalize_text, paste_chord, prefix, Chord, Window};
 
 pub const POLL_TIMEOUT: Duration = Duration::from_secs(20);
 pub const CLIENT_TTL: Duration = Duration::from_secs(20 + 15);
 pub const START_TIMEOUT: Duration = Duration::from_secs(8);
+/// ChatGPT sekmesi mikrofon izni beklerken (eklenti 60 sn bekler; bu, sekme kaybolursa diye yedek).
+pub const PERMISSION_TIMEOUT: Duration = Duration::from_secs(70);
 pub const RESULT_TIMEOUT: Duration = Duration::from_secs(120);
 /// API modunda kayıt bu süreden sonra kendiliğinden bitirilir (OpenAI dosya sınırı 25 MB).
 pub const MAX_RECORDING: Duration = Duration::from_secs(10 * 60);
@@ -26,7 +29,7 @@ pub trait Platform: Send + Sync + 'static {
     fn activate(&self, hwnd: isize);
     fn modifiers_down(&self) -> bool;
     fn set_clipboard(&self, text: &str) -> Result<(), String>;
-    fn send_chord(&self, chord: Chord);
+    fn send_chord(&self, chord: Chord) -> Result<(), String>;
     /// Engellemeden bip.
     fn beep(&self, freq: u32, ms: u32);
     /// Günlüğe bir satır; dikte edilen metin buraya asla verilmez.
@@ -60,6 +63,8 @@ pub enum Engine {
 pub enum Phase {
     Idle,
     Starting,
+    /// ChatGPT sekmesi tarayıcının mikrofon izni sorusunun yanıtını bekliyor; henüz dinlemiyor.
+    Permission,
     Listening,
     Transcribing,
 }
@@ -69,8 +74,31 @@ impl Phase {
         match self {
             Phase::Idle => "idle",
             Phase::Starting => "starting",
+            Phase::Permission => "permission",
             Phase::Listening => "listening",
             Phase::Transcribing => "transcribing",
+        }
+    }
+}
+
+/// chatgpt.com'un tarayıcıdaki mikrofon izni (eklentinin bildirdiği; Permissions API durumu).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mic {
+    #[default]
+    Unknown,
+    Granted,
+    /// İlk dikte de tarayıcı soracak.
+    Prompt,
+    Denied,
+}
+
+impl Mic {
+    pub fn parse(s: &str) -> Option<Mic> {
+        match s {
+            "granted" => Some(Mic::Granted),
+            "prompt" => Some(Mic::Prompt),
+            "denied" => Some(Mic::Denied),
+            _ => None,
         }
     }
 }
@@ -135,6 +163,8 @@ pub struct Snapshot {
     /// Bitirince yapıştırmak yerine yalnızca panoya kopyala.
     pub copy_only: bool,
     pub engine: Engine,
+    pub hotkeys: Hotkeys,
+    pub mic: Mic,
 }
 
 struct State {
@@ -156,6 +186,8 @@ struct State {
     /// Bitirince yalnızca panoya kopyala.
     copy_only: bool,
     engine: Engine,
+    hotkeys: Hotkeys,
+    mic: Mic,
 }
 
 impl State {
@@ -226,6 +258,8 @@ impl<P: Platform> Bridge<P> {
                 send_enter: false,
                 copy_only: false,
                 engine: Engine::Browser,
+                hotkeys: Hotkeys::default(),
+                mic: Mic::Unknown,
                 message: String::new(),
                 phase_at: None,
                 transfer: Transfer::default(),
@@ -261,6 +295,27 @@ impl<P: Platform> Bridge<P> {
             transfer: st.transfer.clone(),
             copy_only: st.copy_only,
             engine: st.engine,
+            hotkeys: st.hotkeys,
+            mic: st.mic,
+        }
+    }
+
+    pub fn set_hotkeys(&self, hotkeys: Hotkeys) {
+        self.st().hotkeys = hotkeys;
+        self.log(&format!("Kısayollar: {} başlat/bitir, {} bitir+Enter, {} iptal.", hotkeys.get(Slot::Toggle),
+                          hotkeys.get(Slot::ToggleEnter), hotkeys.get(Slot::Cancel)));
+    }
+
+    fn toggle_name(&self) -> String {
+        self.st().hotkeys.get(Slot::Toggle).to_string()
+    }
+
+    /// Eklentinin bildirdiği mikrofon izni; değişince günlüğe yazılır.
+    pub fn set_mic(&self, state: &str) {
+        let Some(mic) = Mic::parse(state) else { return };
+        let changed = std::mem::replace(&mut self.st().mic, mic) != mic;
+        if changed {
+            self.log(&format!("ChatGPT mikrofon izni: {state}"));
         }
     }
 
@@ -315,6 +370,8 @@ impl<P: Platform> Bridge<P> {
         match phase {
             Phase::Idle => self.start(),
             Phase::Starting | Phase::Listening => self.stop(send_enter),
+            // Henüz kayıt yok; ikinci basış beklemeyi bırakır.
+            Phase::Permission => self.cancel(),
             Phase::Transcribing => {
                 // Sonuç gelmediyse ikinci basış takılmayı çözer.
                 if since.is_some_and(|t| t.elapsed() > STUCK_AFTER) {
@@ -355,6 +412,9 @@ impl<P: Platform> Bridge<P> {
         self.cond.notify_all();
         self.expire_after(START_TIMEOUT, session, Phase::Starting,
                           "Dikte başlamadı. ChatGPT sekmesinde mikrofon iznini kontrol edin.");
+        // Sekme izin beklemeye geçerse START_TIMEOUT işlemez; bu yedek yalnızca o aşamada işler.
+        self.expire_after(PERMISSION_TIMEOUT, session, Phase::Permission,
+                          "Mikrofon izni verilmedi. ChatGPT sekmesinde mikrofona izin verip yeniden deneyin.");
         self.log("Dikte başlatılıyor…");
     }
 
@@ -443,7 +503,7 @@ impl<P: Platform> Bridge<P> {
         }
         self.set_phase(Phase::Listening, "");
         self.platform.beep(880, 90);
-        self.log("Dinleniyor (OpenAI API)… Bitince Ctrl+Alt+Space.");
+        self.log(&format!("Dinleniyor (OpenAI API)… Bitince {}.", self.toggle_name()));
         let me = Arc::clone(self);
         self.platform.after(MAX_RECORDING, Box::new(move || {
             let still = {
@@ -565,6 +625,11 @@ impl<P: Platform> Bridge<P> {
             None => "None".into(),
         };
         let error = data.get("error").and_then(Value::as_str).filter(|e| !e.is_empty());
+        // İzin durumu oturumdan bağımsızdır (sekme izni değişince kendiliğinden bildirir).
+        if event == Some("mic") {
+            self.set_mic(data.get("state").and_then(Value::as_str).unwrap_or(""));
+            return json!({"ok": true});
+        }
         let mut line = format!("eklenti: {} (oturum {})", shown(data.get("event")), shown(session));
         if event == Some("error") {
             line += &format!(" — {}", error.unwrap_or("None"));
@@ -577,12 +642,21 @@ impl<P: Platform> Bridge<P> {
             return json!({"ok": false, "stale": true});
         }
         match event {
-            Some("started") if st.phase == Phase::Starting => {
+            Some("permission") if st.phase == Phase::Starting => {
+                st.set_phase(Phase::Permission, "");
+                st.mic = Mic::Prompt;
+                drop(st);
+                self.cond.notify_all();
+                self.log("ChatGPT sekmesi mikrofon iznini bekliyor; Chrome'da izin verin.");
+            }
+            Some("started") if matches!(st.phase, Phase::Starting | Phase::Permission) => {
                 st.set_phase(Phase::Listening, "");
+                st.mic = Mic::Granted;
+                let toggle = st.hotkeys.get(Slot::Toggle);
                 drop(st);
                 self.cond.notify_all();
                 self.platform.beep(880, 90);
-                self.log("Dinleniyor… Bitince Ctrl+Alt+Space.");
+                self.log(&format!("Dinleniyor… Bitince {toggle}."));
             }
             Some("error") if st.phase != Phase::Idle => {
                 drop(st);
@@ -623,7 +697,9 @@ impl<P: Platform> Bridge<P> {
 
     fn deliver_inner(&self, raw: Option<&str>, target: Option<Window>, send_enter: bool) -> Result<usize, String> {
         let p = &self.platform;
-        let text = normalize_text(raw)?;
+        // Satır sonları yalnızca terminale yapıştırırken silinir; panoya kopyalarken ve başka her yerde kalır.
+        let keep_lines = self.st().copy_only || !target.as_ref().is_some_and(is_terminal);
+        let text = normalize_text(raw, keep_lines)?;
         let characters = text.chars().count();
         self.progress(|t| t.characters = characters);
         // Kısayolun Ctrl/Alt'ı hâlâ basılıysa yapıştırma başka bir kısayola dönüşür.
@@ -659,18 +735,24 @@ impl<P: Platform> Bridge<P> {
             }
             p.sleep(Duration::from_millis(80));
         }
-        p.send_chord(paste_chord(&target));
+        p.send_chord(paste_chord(&target))?;
         self.progress(|t| {
             t.stage = Stage::Sent;
             t.paste_sent = true;
         });
         let mut entered = false;
         if send_enter {
-            p.sleep(Duration::from_millis(250)); // yapıştırma işlenmeden Enter gitmesin
+            // Terminal ve web editörleri pano metnini asenkron işleyebilir.
+            p.sleep(Duration::from_millis(600));
             if p.foreground_hwnd() == target.hwnd {
-                p.send_chord(Chord::Enter);
+                if p.modifiers_down() {
+                    return Err("Metin yapıştırıldı; Ctrl/Alt/Shift/Win basılı olduğu için Enter gönderilmedi.".into());
+                }
+                p.send_chord(Chord::Enter)?;
                 self.progress(|t| t.enter_sent = true);
                 entered = true;
+            } else {
+                return Err("Metin yapıştırıldı; hedef pencere değiştiği için Enter gönderilmedi.".into());
             }
         }
         p.beep(1200, 50);
@@ -682,7 +764,8 @@ impl<P: Platform> Bridge<P> {
 /// HTTP sunucusunun gördüğü yüz; testte sahte bir uygulama takılabilir.
 pub trait Api: Send + Sync + 'static {
     fn status(&self) -> Value;
-    fn poll(&self, client: &str, version: &str) -> Result<Value, String>;
+    /// `mic`: sekmenin bildirdiği mikrofon izni (boş olabilir).
+    fn poll(&self, client: &str, version: &str, mic: &str) -> Result<Value, String>;
     fn report(&self, client: Option<&str>, data: &Value) -> Value;
     fn trace(&self, client: &str, msg: &str);
 }
@@ -692,7 +775,10 @@ impl<P: Platform> Api for Bridge<P> {
         Bridge::status(self)
     }
 
-    fn poll(&self, client: &str, version: &str) -> Result<Value, String> {
+    fn poll(&self, client: &str, version: &str, mic: &str) -> Result<Value, String> {
+        if !mic.is_empty() {
+            self.set_mic(mic);
+        }
         Ok(match Bridge::poll(self, client, POLL_TIMEOUT, version)? {
             Some((command, session)) => json!({"command": command.name(), "session": session}),
             None => json!({"command": null}),
@@ -725,6 +811,7 @@ pub mod tests {
         pub alive: Mutex<bool>,
         pub clipboard: Mutex<Vec<String>>,
         pub chords: Mutex<Vec<Chord>>,
+        pub fail_chord: Mutex<Option<Chord>>,
         pub beeps: Mutex<Vec<u32>>,
         pub logs: Mutex<Vec<String>>,
         pub timers: Mutex<Vec<Duration>>,
@@ -765,8 +852,12 @@ pub mod tests {
             self.clipboard.lock().unwrap().push(text.into());
             Ok(())
         }
-        fn send_chord(&self, chord: Chord) {
+        fn send_chord(&self, chord: Chord) -> Result<(), String> {
+            if *self.fail_chord.lock().unwrap() == Some(chord) {
+                return Err("Tuş gönderilemedi".into());
+            }
             self.chords.lock().unwrap().push(chord);
+            Ok(())
         }
         fn beep(&self, freq: u32, _: u32) {
             self.beeps.lock().unwrap().push(freq);
@@ -855,7 +946,7 @@ pub mod tests {
         assert!(b.connected());
         b.toggle(false);
         assert_eq!(b.snapshot().phase, Phase::Starting);
-        assert_eq!(*b.platform.timers.lock().unwrap(), vec![START_TIMEOUT]);
+        assert_eq!(*b.platform.timers.lock().unwrap(), vec![START_TIMEOUT, PERMISSION_TIMEOUT]);
         let (cmd, session) = poll(&b, A).unwrap();
         assert_eq!(cmd, Command::Start);
         b.report(Some(A), &event(session, "started"));
@@ -866,7 +957,7 @@ pub mod tests {
         let reply = b.report(Some(A), &json!({"session": session, "event": "result", "text": "merhaba\nworld"}));
         assert_eq!(reply, json!({"ok": true, "characters": 13}));
         assert_eq!(*b.platform.clipboard.lock().unwrap(), vec!["merhaba world".to_string()]);
-        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlShiftV, Chord::Enter]);
+        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlV, Chord::Enter]);
         assert_eq!(*b.platform.beeps.lock().unwrap(), vec![880, 660, 1200]);
         let s = b.snapshot();
         assert_eq!(s.phase, Phase::Idle);
@@ -882,7 +973,7 @@ pub mod tests {
         let session = listening(&b);
         let reply = b.report(Some(A), &json!({"session": session, "event": "result", "text": "elle"}));
         assert_eq!(reply["ok"], true);
-        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlShiftV]); // Enter yok
+        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlV]); // Enter yok
         assert_eq!(b.snapshot().phase, Phase::Idle);
     }
 
@@ -918,6 +1009,84 @@ pub mod tests {
         b.report(Some(A), &json!({"session": session, "event": "error", "error": "Mikrofon izni yok"}));
         let s = b.snapshot();
         assert_eq!((s.phase, s.message.as_str()), (Phase::Idle, "Mikrofon izni yok"));
+    }
+
+    /// Tarayıcı izin sorarken rozet "dinliyor" demez; izin verilince dinleme başlar.
+    #[test]
+    fn permission_prompt_is_not_listening_until_granted() {
+        let b = bridge();
+        poll(&b, A);
+        b.toggle(false);
+        let (_, session) = poll(&b, A).unwrap();
+        assert!(b.platform.timers.lock().unwrap().contains(&PERMISSION_TIMEOUT));
+        b.report(Some(A), &event(session, "permission"));
+        let s = b.snapshot();
+        assert_eq!((s.phase, s.mic), (Phase::Permission, Mic::Prompt));
+        assert!(b.platform.beeps.lock().unwrap().is_empty(), "dinleme bipi henüz yok");
+        // Başlatma zaman aşımı bu aşamaya dokunmaz; izin yedeği dokunur.
+        b.expire(session, Phase::Starting, "Dikte başlamadı.");
+        assert_eq!(b.snapshot().phase, Phase::Permission);
+        b.report(Some(A), &event(session, "started"));
+        let s = b.snapshot();
+        assert_eq!((s.phase, s.mic), (Phase::Listening, Mic::Granted));
+        assert_eq!(*b.platform.beeps.lock().unwrap(), vec![880]);
+    }
+
+    #[test]
+    fn shortcut_while_waiting_for_permission_cancels() {
+        let b = bridge();
+        poll(&b, A);
+        b.toggle(false);
+        let (_, session) = poll(&b, A).unwrap();
+        b.report(Some(A), &event(session, "permission"));
+        b.toggle(true);
+        assert_eq!(b.snapshot().phase, Phase::Idle);
+        assert_eq!(poll(&b, A), Some((Command::Cancel, session)));
+        assert!(b.platform.clipboard.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn permission_timeout_and_denial_return_to_idle() {
+        let b = bridge();
+        poll(&b, A);
+        b.toggle(false);
+        let (_, session) = poll(&b, A).unwrap();
+        b.report(Some(A), &event(session, "permission"));
+        b.expire(session, Phase::Permission, "Mikrofon izni verilmedi.");
+        assert_eq!(b.snapshot().message, "Mikrofon izni verilmedi.");
+        assert_eq!(poll(&b, A), Some((Command::Cancel, session)));
+
+        b.toggle(false);
+        let (_, session) = poll(&b, A).unwrap();
+        b.report(Some(A), &event(session, "permission"));
+        b.report(Some(A), &json!({"event": "mic", "state": "denied"}));
+        b.report(Some(A), &json!({"session": session, "event": "error", "error": "Mikrofon izni reddedildi."}));
+        let s = b.snapshot();
+        assert_eq!((s.phase, s.mic, s.message.as_str()), (Phase::Idle, Mic::Denied, "Mikrofon izni reddedildi."));
+    }
+
+    #[test]
+    fn mic_state_comes_from_poll_and_change_events() {
+        let b = bridge();
+        assert_eq!(b.snapshot().mic, Mic::Unknown);
+        b.set_mic("prompt");
+        assert_eq!(b.snapshot().mic, Mic::Prompt);
+        // Oturum ya da sahip gerekmez; tanınmayan değer yok sayılır.
+        assert_eq!(b.report(Some(B), &json!({"event": "mic", "state": "granted"})), json!({"ok": true}));
+        b.report(Some(B), &json!({"event": "mic", "state": "bilinmez"}));
+        assert_eq!(b.snapshot().mic, Mic::Granted);
+    }
+
+    #[test]
+    fn logs_use_current_hotkeys() {
+        let b = api_bridge();
+        let keys = Hotkeys::default()
+            .with(Slot::Toggle, crate::hotkey::Hotkey::parse("Ctrl+Shift+D").unwrap())
+            .unwrap();
+        b.set_hotkeys(keys);
+        b.toggle(false);
+        assert_eq!(b.snapshot().hotkeys, keys);
+        assert!(b.platform.logs.lock().unwrap().iter().any(|l| l.contains("Bitince Ctrl+Shift+D")));
     }
 
     #[test]
@@ -1029,15 +1198,50 @@ pub mod tests {
         let (b, result) = deliver("Deneme\nTürkçe", 111, false);
         assert_eq!(result, Ok(13));
         assert_eq!(*b.platform.clipboard.lock().unwrap(), vec!["Deneme Türkçe".to_string()]);
-        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlShiftV]);
+        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlV]);
         assert_eq!(b.snapshot().transfer.stage, Stage::Sent);
+    }
+
+    /// Terminal dışına (ör. VS Code'daki bir eklenti paneli) satırlar korunarak Ctrl+V ile yapıştırılır;
+    /// yalnızca kopyalarken de satırlar kalır.
+    #[test]
+    fn line_breaks_survive_outside_terminals() {
+        let b = bridge();
+        let vscode = Window { hwnd: 111, title: "Agent Session Manager".into(), class: "Chrome_WidgetWin_1".into(),
+                              exe: "code.exe".into() };
+        assert_eq!(b.deliver(Some("Birinci\n\nİkinci"), Some(vscode), false), Ok(15));
+        b.set_copy_only(true);
+        assert_eq!(b.deliver(Some("a\nb"), Some(terminal()), false), Ok(3));
+        assert_eq!(*b.platform.clipboard.lock().unwrap(), vec!["Birinci\n\nİkinci".to_string(), "a\nb".to_string()]);
+        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlV]);
     }
 
     #[test]
     fn enter_variant_sends_enter_after_paste() {
         let (b, _) = deliver("ls", 111, true);
-        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlShiftV, Chord::Enter]);
+        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlV, Chord::Enter]);
         assert!(b.snapshot().transfer.enter_sent);
+    }
+
+    #[test]
+    fn failed_enter_is_reported_without_claiming_success() {
+        let b = bridge();
+        *b.platform.fail_chord.lock().unwrap() = Some(Chord::Enter);
+        assert!(b.deliver(Some("deneme"), Some(terminal()), true).is_err());
+        let transfer = b.snapshot().transfer;
+        assert!(transfer.paste_sent);
+        assert!(!transfer.enter_sent);
+        assert_eq!(transfer.stage, Stage::Error);
+        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlV]);
+    }
+
+    #[test]
+    fn failed_paste_never_sends_enter() {
+        let b = bridge();
+        *b.platform.fail_chord.lock().unwrap() = Some(Chord::CtrlV);
+        assert!(b.deliver(Some("deneme"), Some(terminal()), true).is_err());
+        assert!(b.platform.chords.lock().unwrap().is_empty());
+        assert!(!b.snapshot().transfer.enter_sent);
     }
 
     // --- API modu --------------------------------------------------------------
@@ -1063,7 +1267,7 @@ pub mod tests {
         assert_eq!(*b.platform.transcribed.lock().unwrap(), vec![44 + 32_000]);
         assert_eq!(b.snapshot().phase, Phase::Idle);
         assert_eq!(*b.platform.clipboard.lock().unwrap(), vec!["merhaba dünya".to_string()]);
-        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlShiftV, Chord::Enter]);
+        assert_eq!(*b.platform.chords.lock().unwrap(), vec![Chord::CtrlV, Chord::Enter]);
         assert_eq!(*b.platform.beeps.lock().unwrap(), vec![880, 660, 1200]);
         // Eklentiye hiçbir komut gitmez.
         assert!(b.st().commands.is_empty());

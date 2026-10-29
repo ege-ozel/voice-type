@@ -1,9 +1,12 @@
-//! ChatGPT dikte köprüsü (Rust): Ctrl+Alt+Space ile ChatGPT web diktesini arka planda başlatır,
+//! ChatGPT dikte köprüsü (Rust): kısayolla (varsayılan Ctrl+Alt+Space) ChatGPT web diktesini arka planda başlatır,
 //! sonucu odaktaki pencereye yapıştırır. Chrome eklentisiyle 127.0.0.1:47831 üzerinden konuşur.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 #![cfg_attr(not(windows), allow(dead_code))]
 
 mod bridge;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod dock;
+mod hotkey;
 mod icon;
 mod openai;
 mod server;

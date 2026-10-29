@@ -20,10 +20,11 @@ async function bridgeRequest(path, body, timeout = 7000) {
   return data;
 }
 
-async function poll(client) {
+async function poll(client, mic) {
   try {
     const version = chrome.runtime.getManifest().version;
-    return await bridgeRequest('/poll?client=' + encodeURIComponent(client) + '&v=' + version, null, 30000);
+    const query = '/poll?client=' + encodeURIComponent(client) + '&v=' + version + '&mic=' + encodeURIComponent(mic || '');
+    return await bridgeRequest(query, null, 30000);
   } catch (error) {
     // Köprü kapalıyken içerik betiği sıkı döngüye girmesin; bekleme burada (arka plan sekmesi
     // zamanlayıcıları kısıldığı için sayfada değil) yapılır.
@@ -40,15 +41,21 @@ function trace(client, msg) {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id) return;
   let action;
-  if (message.type === 'poll') action = poll(message.client);
+  if (message.type === 'poll') action = poll(message.client, message.mic);
   else if (message.type === 'report') {
-    const {client, session, event, text, error} = message;
-    action = bridgeRequest('/report', {client, session, event, text, error}).catch(err => {
+    const {client, session, event, text, error, state} = message;
+    action = bridgeRequest('/report', {client, session, event, text, error, state}).catch(err => {
       trace(client, 'bildirim gönderilemedi (' + event + '): ' + err.message).catch(() => {});
       throw err;
     });
   } else if (message.type === 'trace') {
     action = trace(message.client, message.msg);
+  } else if (message.type === 'focus') {
+    // Mikrofon izni sorusu yalnızca öndeki sekmede görünür: ChatGPT sekmesini ve penceresini öne getir.
+    action = Promise.all([
+      chrome.tabs.update(sender.tab.id, {active: true}),
+      chrome.windows.update(sender.tab.windowId, {focused: true})
+    ]).then(() => ({}));
   } else if (message.type === 'status') action = bridgeRequest('/status');
   else action = Promise.reject(new Error('Geçersiz işlem.'));
   action.then(data => respond({ok: true, ...data})).catch(error => respond({ok: false, error: error.message}));

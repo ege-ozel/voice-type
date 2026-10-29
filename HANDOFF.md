@@ -38,13 +38,31 @@ Bilerek düzeltilmeyen: `make_config.py`, `bridge-config.json` varken `extension
 - Eklenti 2.3.1: yeniden yüklemeden sonra eski içerik betiğinin "Extension context invalidated"
   hatası (`content.js` → `log`) yakalanıyor.
 
+## 2026-10-16 eklenenler
+
+- **Kısayol değiştirme** (`rust/src/hotkey.rs`): sağ tık → "Kısayolları değiştir" alt menüsü ya da durum
+  penceresinde kısayol satırına tıklama → satır yeni birleşimi bekler (Esc vazgeçer). Yakalama sırasında genel
+  kısayollar bırakılır. `dikte-ayarlar.json` → `hotkeys`. Ctrl+V, Ctrl+Shift+V (uygulamanın kendi yapıştırması),
+  Alt+F4 vb. engellenir; değiştiricisiz tuş yalnızca F tuşları, Pause, ScrollLock için.
+- **Mikrofon izni**: yeni `Phase::Permission`. Eklenti 2.4.0 Permissions API ile izni izler, `/poll?mic=` ve
+  `{"event": "mic"}` ile bildirir; izin sorulurken `permission` olayı gönderir, ChatGPT sekmesini öne getirir ve
+  izin verilene kadar `started` göndermez. Rozet artık başlatırken "BAŞLIYOR…", izin beklerken turuncu
+  "İZİN BEKLENİYOR" gösterir (eskiden ikisi de "DİNLİYOR"du). İzin beklerken kısayol iptal eder.
+- **Hata**: rozetin kendisinde tam metinle gösterilir (rozet metne göre genişler, en fazla 400 px; sığmayan
+  "…" ile biter). Ayrı hata paneli 3.2.1'de kaldırıldı, hata iki kez görünüyordu. Uzun hatalar rozette daha
+  uzun kalır (en fazla 12 sn). Rozete sol tık durum penceresini açar.
+- **Rozet (3.2.x)**: 60×60 kare; yumuşak açılma/kapanma, sürükle-bırak ve kenara yapışma (`src/dock.rs`).
+  Katmanlı pencere (`WS_EX_LAYERED` + `UpdateLayeredWindow`, köşeler renk anahtarıyla saydam): konum, boyut
+  ve içerik tek çağrıda değişir; ayrı ayrı değişince geçişte titreme oluyordu.
+- Gerçek Windows'ta görsel deneme yapılmadı (kullanıcının köprüsü açıktı).
+
 ## Yapılacaklar
 
 1. ~~Push~~ ve ~~CI~~: dal GitHub'da, `rust` iş akışı yeşil. MSVC derlemesi yerelde de denendi (EXE 384 KB).
 2. **Simgeler (yeni):** `rust/src/icon.rs` tek kaynak: EXE/tepsi `.ico` ve eklenti PNG'leri. Kullanıcı
    eklentiyi `chrome://extensions` → yenile ile yeniden yüklemeli. Geri bildirime göre ince ayar.
 3. **Gerçek Windows'ta uçtan uca deneme** (kullanıcıyla): `rust/README.md` → "Mevcut kurulumda uçtan uca
-   deneme". Özellikle: gerçek ChatGPT sekmesiyle dikte, Windows Terminal'de Ctrl+Shift+V, tam ekran
+   deneme". Özellikle: gerçek ChatGPT sekmesiyle dikte, Windows Terminal ve VS Code (eklenti paneli dahil) içinde Ctrl+V, tam ekran
    terminale odak geçişi, elle durdurma, tepsi menüsü, DPI ölçekleme (125/150%), Bahnschrift ile rozet
    yazılarının sığması, Windows 11'de başlık çubuğu rengi.
 4. **Ölçüm raporu**: `rust/measure.ps1` ile Python EXE ve Rust EXE için açılış süresi, RAM (working set +

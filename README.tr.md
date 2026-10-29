@@ -35,12 +35,20 @@ Rozete ya da tepsi simgesine sağ tıklayıp seçilir; seçim hatırlanır.
 | **Ctrl+Alt+Enter** | Bitir, yapıştır ve Enter gönder |
 | **Ctrl+Alt+Backspace** | İptal |
 
+Kısayolları değiştirmek için rozete veya tepsi simgesine sağ tıklayıp **Kısayolları değiştir** menüsünden
+işlemi seçin ve yeni tuş birleşimine basın. Durum penceresindeki kısayol satırlarına tıklayarak da
+değiştirebilirsiniz. **Esc** vazgeçer; **Varsayılanlara dön** ilk kısayolları geri getirir.
+Seçimler EXE'nin yanındaki `dikte-ayarlar.json` dosyasında saklanır ve yeniden açıldığında korunur.
+
 Metin, bitirme kısayoluna bastığın anda odakta olan pencereye gider: konuşmaya başla, hedef pencereye
-geç, bitir. Terminallerde Ctrl+Shift+V, diğer pencerelerde Ctrl+V gönderilir. Sağ tıktan **yalnızca
+geç, bitir. Ctrl+V ile yapıştırılır (yalnızca Alacritty ve WezTerm'de Ctrl+Shift+V). Satır sonları korunur; yalnızca terminallerde metin tek satıra indirilir. Sağ tıktan **yalnızca
 panoya kopyala** seçilirse hiçbir tuş gönderilmez.
 
-Sağ alttaki rozet durumu gösterir: HAZIR, DİNLİYOR, YAZIYOR, YAPIŞTIRILDI / KOPYALANDI, HATA.
-Tepsi simgesine çift tıklamak durum penceresini açar.
+Rozet, rengi durumu gösteren küçük bir mikrofon karesidir: HAZIR, DİNLİYOR (yanıp sönen noktayla),
+YAZIYOR, YAPIŞTIRILDI / KOPYALANDI, HATA. YAPIŞTIRILDI / KOPYALANDI / HATA'da birkaç saniyeliğine yumuşakça
+açılır; fareyle üstüne gelince iki bitirme kısayolunu birden gösterir. Sürükleyip istediğin yere
+bırakabilirsin: en yakın ekran kenarına yapışır (köşeler dahil, görev çubuğunun üstüne çıkmaz) ve yeri
+hatırlanır. Rozete tıklamak ya da tepsi simgesine çift tıklamak durum penceresini açar.
 
 ## Kurulum
 

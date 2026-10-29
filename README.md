@@ -36,11 +36,14 @@ Pick one by right-clicking the badge or the tray icon; the choice is remembered.
 | **Ctrl+Alt+Backspace** | Cancel |
 
 The text goes to the window that has focus at the moment you finish: start talking, switch to the
-target window, finish. Terminals get Ctrl+Shift+V, other windows Ctrl+V. With **copy to clipboard
+target window, finish. Text is pasted with Ctrl+V (Ctrl+Shift+V only in Alacritty and WezTerm). Line breaks are kept, except in terminals where the text is joined into one line. With **copy to clipboard
 only** (right-click menu), no keys are sent at all.
 
-The badge in the bottom-right corner shows the state: READY, LISTENING, TRANSCRIBING, PASTED / COPIED,
-ERROR (the UI itself is in Turkish). Double-click the tray icon for the status window.
+The badge is a small microphone square whose color shows the state: READY, LISTENING (with a blinking
+dot), TRANSCRIBING, PASTED / COPIED, ERROR (the UI itself is in Turkish). It slides open for a few seconds
+on PASTED / COPIED / ERROR, and on hover it shows both finish shortcuts. Drag it anywhere: it snaps to the
+nearest screen edge (corners included, never over the taskbar) and remembers the spot. Click it or
+double-click the tray icon for the status window.
 
 ## Setup
 

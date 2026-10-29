@@ -18,6 +18,10 @@ RAM ve açılış süresini kendi makinenizde `measure.ps1` ile ölçün (aşağ
 
 ## Derleme
 
+Yerel dağıtımda güncel EXE `dist/ChatGPT-Dikte-v3.1.5.exe`, sabit başlatıcı `dist/Baslat.bat`.
+Önceki EXE'ler `dist/arsiv/` altında tutulur. Adlandırma `ChatGPT-Dikte-vANA.YENİLİK.DÜZELTME.exe`;
+`bridge-config.json` ve `dikte-ayarlar.json` güncel EXE'nin yanında kalır.
+
 Windows'ta ([rustup](https://rustup.rs) ve Visual Studio Build Tools ile):
 
 ```powershell
@@ -101,8 +105,11 @@ ve private bellek toplamını (tüm süreçler) ve EXE boyutunu yazar, sonra sü
 Siyah zemin + neon vurgu: HAZIR teal, DİNLİYOR neon pembe (yanıp sönen kayıt noktasıyla), YAZIYOR
 elektrik mavisi, YAPIŞTIRILDI sarı, HATA kırmızı, BAĞLI DEĞİL gri. Parlama ucuz yoldan yapılır: metin ve
 çerçeve, zemine karıştırılmış sönük renklerle birkaç piksel kaydırılarak altına çizilir. Alfa karıştırma,
-katmanlı pencere ya da animasyon döngüsü yoktur; çizim yalnızca durum değişince yapılır (dinlerken kayıt
-noktası için saniyede ~1,5 kez). Rozetteki mikrofon, uygulama simgesindeki çizimin içi boş hâlidir (`icon::glyph`, yumuşak kenarlı, durum
+katmanlı pencere ya da sürekli animasyon döngüsü yoktur; çizim yalnızca durum değişince yapılır (dinlerken
+kayıt noktası için saniyede ~1,5 kez). Rozet normalde 60×60'lık karedir; YAPIŞTIRILDI / KOPYALANDI / HATA /
+İZİN BEKLENİYOR'da ve fare üstündeyken ~190 ms'lik yavaşlayan geçişle açılır (yalnızca geçiş sürerken ~60 kare/sn
+zamanlayıcı çalışır). Sürüklenip bırakılınca en yakın çalışma alanı kenarına 12 px boşlukla oturur
+(`src/dock.rs`, DeskTuk'taki kenar rayı); yer `dikte-ayarlar.json` → `badge` içinde saklanır. Rozetteki mikrofon, uygulama simgesindeki çizimin içi boş hâlidir (`icon::glyph`, yumuşak kenarlı, durum
 renginde). Durum penceresinde kısayolların her tuşu ayrı kapak olarak çizilir. Başlıklar Bahnschrift'tir (Windows 10+); yoksa Windows en yakın yazı
 tipini seçer. Windows 11'de durum penceresinin başlık çubuğu ve kenarlığı da temaya uyar.
 
@@ -111,9 +118,10 @@ tipini seçer. Windows 11'de durum penceresinin başlık çubuğu ve kenarlığ�
 - `src/bridge.rs`: durum makinesi (aşamalar, oturum, owner, komut kuyruğu, zaman aşımları, yapıştırma
   adımları). Windows'a dokunan her şey `Platform` arkasında, bu yüzden her yerde test edilir.
 - `src/server.rs`: std::net ile HTTP sunucusu, yetkilendirme, CORS.
-- `src/text.rs`: metin temizleme, pencereye göre Ctrl+V / Ctrl+Shift+V.
+- `src/text.rs`: metin temizleme (terminalde tek satır, başka yerde satırlar korunur), pencereye göre Ctrl+V / Ctrl+Shift+V.
 - `src/openai.rs`: WAV, multipart gövde, yanıt/hata çözme, anahtar ve model seçimi.
 - `src/view.rs`: rozet, tepsi ipucu ve durum penceresi metinleri.
+- `src/dock.rs`: rozetin kenara yapışma, genişleme yönü ve geçiş eğrisi (platformdan bağımsız, testli).
 - `src/win/`: Win32 uygulaması (pano, SendInput, odak, bip, günlük, pencereler, tepsi; `audio.rs` mikrofon,
   `http.rs` WinHTTP); `gfx.rs` neon
   çizim yardımcıları.

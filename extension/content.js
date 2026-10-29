@@ -13,7 +13,9 @@
     busy: ['cancel transcription', 'yazıya dökmeyi iptal et']
   };
 
-  let active = null; // {session, baseline, started: Promise}
+  let active = null; // {session, baseline, started: Promise, cancelled: Promise, cancelNow}
+  const MIC_DENIED = 'ChatGPT mikrofon izni reddedilmiş. Chrome adres çubuğundaki site ayarlarından chatgpt.com için Mikrofon: İzin ver.';
+  const PERMISSION_WAIT = 60000;
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -94,6 +96,28 @@
     } catch (_) { /* temizlenemezse bir sonraki oturum farkı alır */ }
   }
 
+  // chatgpt.com'un mikrofon izni: 'granted' | 'prompt' | 'denied' | 'unknown'.
+  let micStatus = null;
+  async function micPermission() {
+    try {
+      micStatus ??= await navigator.permissions.query({name: 'microphone'});
+      return micStatus.state;
+    } catch (_) {
+      return 'unknown';
+    }
+  }
+
+  // İzin sorusu yanıtlanana (ya da süre dolana) kadar bekler; son durumu döner.
+  async function waitPermission(timeout) {
+    if ((await micPermission()) !== 'prompt') return micStatus?.state || 'unknown';
+    return new Promise(resolve => {
+      const done = () => { micStatus.removeEventListener('change', changed); clearTimeout(timer); resolve(micStatus.state); };
+      const changed = () => { if (micStatus.state !== 'prompt') done(); };
+      const timer = setTimeout(done, timeout);
+      micStatus.addEventListener('change', changed);
+    });
+  }
+
   async function send(payload) {
     try { await chrome.runtime.sendMessage({type: 'report', client: CLIENT, ...payload}); } catch (_) {}
   }
@@ -152,10 +176,33 @@
     if (!button) {
       return send({session, event: 'error', error: 'ChatGPT dikte düğmesi bulunamadı. Sekmeyi yenileyin ve giriş yapın.'});
     }
+    const mic = await micPermission();
+    if (mic === 'denied') return send({session, event: 'error', error: MIC_DENIED});
     const baseline = editorText();
-    let resolveStarted;
-    active = {session, baseline, finishing: false, started: new Promise(r => { resolveStarted = r; })};
+    let resolveStarted, cancelNow;
+    active = {
+      session, baseline, finishing: false,
+      started: new Promise(r => { resolveStarted = r; }),
+      cancelled: new Promise(r => { cancelNow = r; })
+    };
+    active.cancelNow = cancelNow;
     button.click();
+    if (mic === 'prompt') {
+      // Tarayıcı izin soruyor: ChatGPT kare düğmesini gösterse bile henüz dinlemiyor. Köprüye
+      // "izin bekleniyor" denir; sekme öne getirilir (arka plandaki sekmede soru görünmez).
+      log('mikrofon izni bekleniyor');
+      send({session, event: 'permission'});
+      chrome.runtime.sendMessage({type: 'focus'}).catch(() => {});
+      const answer = await Promise.race([waitPermission(PERMISSION_WAIT), active.cancelled.then(() => 'cancelled')]);
+      log('mikrofon izni: ' + answer);
+      if (answer !== 'granted') {
+        resolveStarted(false);
+        active = null;
+        if (answer === 'cancelled') return;
+        (findButton('cancel') || findButton('stop'))?.click();
+        return send({session, event: 'error', error: answer === 'denied' ? MIC_DENIED : 'Mikrofon izni verilmedi (süre doldu). ChatGPT sekmesinde izin verip yeniden deneyin.'});
+      }
+    }
     const ok = await waitFor(() => findButton('stop'), 7000);
     resolveStarted(!!ok);
     log('başlatma sonucu: ' + !!ok + '; düğmeler: ' + buttonLabels());
@@ -182,6 +229,7 @@
   async function cancel(session) {
     log('iptal', session);
     if (active && active.session !== session) return; // eski oturumun iptali yenisine dokunmasın
+    active?.cancelNow?.(); // izin bekleniyorsa beklemeyi bırak
     if (active) await active.started;
     active = null;
     (findButton('cancel') || findButton('busy'))?.click();
@@ -191,7 +239,7 @@
     while (true) {
       let reply;
       try {
-        reply = await chrome.runtime.sendMessage({type: 'poll', client: CLIENT});
+        reply = await chrome.runtime.sendMessage({type: 'poll', client: CLIENT, mic: await micPermission()});
       } catch (_) {
         if (!chrome.runtime?.id) return; // eklenti yeniden yüklendi; bu betik emekliye ayrıldı
         await sleep(2000);
@@ -204,6 +252,12 @@
       else if (command === 'cancel') cancel(session);
     }
   }
+
+  // İzin değişince (verildi / reddedildi / sıfırlandı) köprü hemen bilsin; durum penceresinde görünür.
+  micPermission().then(() => micStatus?.addEventListener('change', () => {
+    log('mikrofon izni değişti: ' + micStatus.state);
+    send({event: 'mic', state: micStatus.state});
+  }));
 
   log('betik yüklendi ' + chrome.runtime.getManifest().version + '; düğmeler: ' + buttonLabels());
   loop();

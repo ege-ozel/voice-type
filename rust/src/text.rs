@@ -19,22 +19,26 @@ pub enum Chord {
     Enter,
 }
 
-// Bu uygulamalarda Ctrl+V terminal yerine editöre veya uygulamaya gidebilir; Ctrl+Shift+V terminal yapıştırmasıdır.
-const SHIFT_PASTE_EXES: &[&str] = &[
+// Terminal pencereleri: metin tek satıra indirilir ki satır sonları komut gönderimine dönüşmesin.
+const TERMINAL_EXES: &[&str] = &[
     "windowsterminal.exe",
-    "code.exe",
-    "cursor.exe",
-    "windsurf.exe",
     "wezterm-gui.exe",
     "alacritty.exe",
     "conemu64.exe",
     "conemu.exe",
+    "mintty.exe",
 ];
 
+// Yalnızca bu terminaller Ctrl+V'yi yapıştırma saymaz. Geri kalan her yere (VS Code, Cursor, Windows
+// Terminal, konsol, tarayıcı, eklenti panelleri) Ctrl+V gider: VS Code'da Ctrl+Shift+V yapıştırmıyor,
+// Markdown önizlemesi açıyordu.
+const SHIFT_PASTE_EXES: &[&str] = &["wezterm-gui.exe", "alacritty.exe"];
+
+pub fn is_terminal(target: &Window) -> bool {
+    target.class == "ConsoleWindowClass" || TERMINAL_EXES.contains(&target.exe.as_str())
+}
+
 pub fn paste_chord(target: &Window) -> Chord {
-    if target.class == "ConsoleWindowClass" {
-        return Chord::CtrlV;
-    }
     if SHIFT_PASTE_EXES.contains(&target.exe.as_str()) {
         Chord::CtrlShiftV
     } else {
@@ -57,11 +61,30 @@ fn printable(c: char) -> bool {
         | '\u{E000}'..='\u{F8FF}')
 }
 
-/// Yeni satır ve kontrol karakterleri terminalde komut gönderimine dönüşmesin diye tek satıra çevirir.
-pub fn normalize_text(text: Option<&str>) -> Result<String, String> {
+/// Kontrol ve görünmez karakterleri boşluğa çevirip boşlukları teke indirir. `keep_lines` doğruysa
+/// satır sonları korunur (art arda boş satırlar teke iner); değilse metin tek satıra indirilir ki
+/// terminalde satır sonları komut gönderimine dönüşmesin.
+pub fn normalize_text(text: Option<&str>, keep_lines: bool) -> Result<String, String> {
     let text = text.ok_or_else(|| "Metin geçerli değil.".to_string())?;
-    let cleaned: String = text.chars().map(|c| if printable(c) { c } else { ' ' }).collect();
-    let joined = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let clean = |s: &str| -> String {
+        let s: String = s.chars().map(|c| if printable(c) { c } else { ' ' }).collect();
+        s.split_whitespace().collect::<Vec<_>>().join(" ")
+    };
+    let joined = if keep_lines {
+        let mut lines: Vec<String> = Vec::new();
+        for line in text.replace("\r\n", "\n").split(['\n', '\r', '\u{2028}', '\u{2029}']).map(clean) {
+            // Boş satır yalnızca dolu bir satırın ardından ve bir kez eklenir.
+            if !line.is_empty() || lines.last().is_some_and(|l| !l.is_empty()) {
+                lines.push(line);
+            }
+        }
+        while lines.last().is_some_and(|l| l.is_empty()) {
+            lines.pop();
+        }
+        lines.join("\n")
+    } else {
+        clean(text)
+    };
     if joined.is_empty() {
         return Err("Ses algılanmadı; metin boş.".into());
     }
@@ -90,22 +113,40 @@ mod tests {
 
     #[test]
     fn control_characters_cannot_submit_input() {
-        assert_eq!(normalize_text(Some("Türkçe\r\nmetin\tİngilizce\x1b[31m")).unwrap(), "Türkçe metin İngilizce [31m");
+        assert_eq!(normalize_text(Some("Türkçe\r\nmetin\tİngilizce\x1b[31m"), false).unwrap(),
+                   "Türkçe metin İngilizce [31m");
         let long = "a".repeat(32001);
-        for value in [Some(""), Some("\n\x00"), None, Some(long.as_str())] {
-            assert!(normalize_text(value).is_err(), "{value:?}");
+        for keep in [false, true] {
+            for value in [Some(""), Some("\n\x00"), Some("\r\n \u{2029}\n"), None, Some(long.as_str())] {
+                assert!(normalize_text(value, keep).is_err(), "{value:?}");
+            }
+            assert_eq!(normalize_text(Some(&"ğ".repeat(32000)), keep).unwrap().chars().count(), 32000);
+            assert_eq!(normalize_text(Some("a\u{202E}b\u{200B}c\u{00A0}d"), keep).unwrap(), "a b c d");
         }
-        assert_eq!(normalize_text(Some(&"ğ".repeat(32000))).unwrap().chars().count(), 32000);
-        assert_eq!(normalize_text(Some("a\u{202E}b\u{200B}c\u{00A0}d")).unwrap(), "a b c d");
+    }
+
+    #[test]
+    fn line_breaks_are_kept_outside_terminals() {
+        let raw = "\r\n  Birinci  satır\r\nikinci\tsatır\n\n\n\nyeni paragraf\x1b \r\n\n";
+        assert_eq!(normalize_text(Some(raw), true).unwrap(), "Birinci satır\nikinci satır\n\nyeni paragraf");
+        assert_eq!(normalize_text(Some(raw), false).unwrap(), "Birinci satır ikinci satır yeni paragraf");
+        assert_eq!(normalize_text(Some("a\rb\u{2028}c"), true).unwrap(), "a\nb\nc");
     }
 
     #[test]
     fn paste_chord_per_window() {
-        assert_eq!(paste_chord(&terminal()), Chord::CtrlShiftV);
-        let console = Window { class: "ConsoleWindowClass".into(), exe: "cmd.exe".into(), ..terminal() };
-        assert_eq!(paste_chord(&console), Chord::CtrlV);
-        let notepad = Window { class: "Notepad".into(), exe: "notepad.exe".into(), ..terminal() };
-        assert_eq!(paste_chord(&notepad), Chord::CtrlV);
+        let window = |class: &str, exe: &str| Window { class: class.into(), exe: exe.into(), ..terminal() };
+        let console = window("ConsoleWindowClass", "cmd.exe");
+        let vscode = window("Chrome_WidgetWin_1", "code.exe");
+        let cursor = window("Chrome_WidgetWin_1", "cursor.exe");
+        let notepad = window("Notepad", "notepad.exe");
+        for w in [&terminal(), &console, &vscode, &cursor, &notepad] {
+            assert_eq!(paste_chord(w), Chord::CtrlV, "{}", w.exe);
+        }
+        assert_eq!(paste_chord(&window("x", "alacritty.exe")), Chord::CtrlShiftV);
+        assert_eq!(paste_chord(&window("x", "wezterm-gui.exe")), Chord::CtrlShiftV);
+        assert!(is_terminal(&terminal()) && is_terminal(&console));
+        assert!(!is_terminal(&vscode) && !is_terminal(&cursor) && !is_terminal(&notepad));
     }
 
     #[test]

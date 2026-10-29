@@ -115,7 +115,8 @@ fn key(vk: VIRTUAL_KEY, up: bool) -> INPUT {
 }
 
 fn copy_to_clipboard(text: &str) -> bool {
-    let wide: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+    // Windows panosu satır sonu olarak CRLF bekler; bazı uygulamalar yalın LF'yi satır saymaz.
+    let wide: Vec<u16> = text.replace('\n', "\r\n").encode_utf16().chain(Some(0)).collect();
     let bytes = wide.len() * size_of::<u16>();
     unsafe {
         // Başka bir uygulama panoyu kısa süre tutuyor olabilir.
@@ -199,7 +200,7 @@ impl Platform for WinPlatform {
         }
     }
 
-    fn send_chord(&self, chord: Chord) {
+    fn send_chord(&self, chord: Chord) -> Result<(), String> {
         let keys: &[VIRTUAL_KEY] = match chord {
             Chord::CtrlV => &[VK_CONTROL, b'V' as u16],
             Chord::CtrlShiftV => &[VK_CONTROL, VK_SHIFT, b'V' as u16],
@@ -207,7 +208,18 @@ impl Platform for WinPlatform {
         };
         let mut inputs: Vec<INPUT> = keys.iter().map(|&k| key(k, false)).collect();
         inputs.extend(keys.iter().rev().map(|&k| key(k, true)));
-        unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), size_of::<INPUT>() as i32) };
+        let sent = unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), size_of::<INPUT>() as i32) };
+        if sent != inputs.len() as u32 {
+            // Kısmi gönderimde değiştirici tuş basılı kalmasın; Enter'ı tekrar gönderme.
+            let releases: Vec<INPUT> = keys.iter().rev().map(|&k| key(k, true)).collect();
+            unsafe { SendInput(releases.len() as u32, releases.as_ptr(), size_of::<INPUT>() as i32) };
+            return Err(if chord == Chord::Enter {
+                "Metin yapıştırıldı ama Windows Enter tuşunun gönderimini tamamlayamadı."
+            } else {
+                "Windows yapıştırma tuşlarını gönderemedi. Metin panoda; Ctrl+V ile yapıştırın."
+            }.into());
+        }
+        Ok(())
     }
 
     fn beep(&self, freq: u32, ms: u32) {

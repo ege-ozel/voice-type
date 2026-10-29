@@ -235,7 +235,8 @@ pub fn route(request: &Request, api: &dyn Api, token: &str) -> Response {
     if request.method == "GET" {
         return match path {
             "/status" => reply(200, origin, api.status()),
-            "/poll" => match api.poll(&query_param(query, "client"), &query_param(query, "v")) {
+            "/poll" => match api.poll(&query_param(query, "client"), &query_param(query, "v"),
+                                      &query_param(query, "mic")) {
                 Ok(payload) => reply(200, origin, payload),
                 Err(error) => reply(400, origin, json!({"error": error})),
             },
@@ -269,7 +270,7 @@ mod tests {
 
     #[derive(Default)]
     struct FakeApi {
-        polls: Mutex<Vec<(String, String)>>,
+        polls: Mutex<Vec<(String, String, String)>>,
         reports: Mutex<Vec<Value>>,
         traces: Mutex<Vec<String>>,
     }
@@ -278,8 +279,8 @@ mod tests {
         fn status(&self) -> Value {
             json!({"connected": false, "phase": "idle"})
         }
-        fn poll(&self, client: &str, version: &str) -> Result<Value, String> {
-            self.polls.lock().unwrap().push((client.into(), version.into()));
+        fn poll(&self, client: &str, version: &str, mic: &str) -> Result<Value, String> {
+            self.polls.lock().unwrap().push((client.into(), version.into(), mic.into()));
             Ok(json!({"command": null}))
         }
         fn report(&self, _: Option<&str>, data: &Value) -> Value {
@@ -331,9 +332,9 @@ mod tests {
         assert_eq!(status, 200);
         assert!(!head.contains("Access-Control-Allow-Origin"));
 
-        let (status, _, body) = send(port, &format!("GET /poll?client=tab-aaaaaaaa&v=2.2.0 HTTP/1.1\r\n{AUTH}\r\n"));
+        let (status, _, body) = send(port, &format!("GET /poll?client=tab-aaaaaaaa&v=2.2.0&mic=granted HTTP/1.1\r\n{AUTH}\r\n"));
         assert_eq!((status, body), (200, json!({"command": null})));
-        assert_eq!(*api.polls.lock().unwrap(), vec![("tab-aaaaaaaa".into(), "2.2.0".into())]);
+        assert_eq!(*api.polls.lock().unwrap(), vec![("tab-aaaaaaaa".into(), "2.2.0".into(), "granted".into())]);
 
         let report = r#"{"client":"tab-aaaaaaaa","session":1,"event":"result","text":"Türkçe x"}"#;
         let (status, _, body) = send(port, &format!(

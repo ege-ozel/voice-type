@@ -1,5 +1,5 @@
 const status = document.getElementById('status');
-const phases = {idle: 'Hazır', starting: 'Başlatılıyor…', listening: 'Dinliyor', transcribing: 'Yazıya dökülüyor…'};
+const phases = {idle: 'Hazır', starting: 'Başlatılıyor…', permission: 'Mikrofon izni bekleniyor', listening: 'Dinliyor', transcribing: 'Yazıya dökülüyor…'};
 chrome.runtime.sendMessage({type: 'status'}).then(result => {
   if (!result.ok) throw new Error(result.error);
   status.textContent = result.connected

@@ -17,6 +17,7 @@ use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
 use windows_sys::Win32::System::Threading::CreateMutexW;
 
 use crate::bridge::{Bridge, Engine, Platform};
+use crate::hotkey::{Hotkeys, Slot};
 use crate::server;
 use platform::WinPlatform;
 use ui::{message_box, wide, Action};
@@ -38,7 +39,7 @@ pub fn read_token(dir: &Path) -> Option<String> {
 
 const SETTINGS: &str = "dikte-ayarlar.json";
 
-/// Kullanıcı ayarları (`copy_only`, `engine`, isteğe bağlı `openai_api_key`, `openai_model`).
+/// Kullanıcı ayarları (`copy_only`, `engine`, `hotkeys`, isteğe bağlı `openai_api_key`, `openai_model`).
 /// Dosya yoksa ya da bozuksa boş nesne: yapıştır + ChatGPT sekmesi.
 pub fn read_settings(dir: &Path) -> Value {
     fs::read(dir.join(SETTINGS))
@@ -72,6 +73,14 @@ pub fn read_engine(dir: &Path) -> Engine {
 
 pub fn save_engine(dir: &Path, engine: Engine) -> std::io::Result<()> {
     save_setting(dir, "engine", Value::from(if engine == Engine::Api { "api" } else { "browser" }))
+}
+
+pub fn read_hotkeys(dir: &Path) -> Hotkeys {
+    Hotkeys::from_json(read_settings(dir).get("hotkeys"))
+}
+
+pub fn save_hotkeys(dir: &Path, hotkeys: &Hotkeys) -> std::io::Result<()> {
+    save_setting(dir, "hotkeys", hotkeys.to_json())
 }
 
 /// Anahtar okunamayınca gösterilen mesaj: aranan tam yolu ve dosyanın yok mu bozuk mu olduğunu söyler.
@@ -115,6 +124,8 @@ pub fn run() -> i32 {
     if read_engine(&dir) == Engine::Api {
         bridge.set_engine(Engine::Api);
     }
+    let hotkeys = read_hotkeys(&dir);
+    bridge.set_hotkeys(hotkeys);
     {
         let bridge = Arc::clone(&bridge);
         let token: Arc<str> = Arc::from(token);
@@ -134,10 +145,10 @@ pub fn run() -> i32 {
             }
         });
     }
-    bridge.platform.log(
-        "Hazır (Rust). Chrome'da chatgpt.com açık kalsın (arka planda olabilir). \
-         Ctrl+Alt+Space başlat/bitir, Ctrl+Alt+Enter bitir+Enter, Ctrl+Alt+Backspace iptal.",
-    );
+    bridge.platform.log(&format!(
+        "Hazır (Rust). Chrome'da chatgpt.com açık kalsın (arka planda olabilir). {} ile konuşun.",
+        hotkeys.get(Slot::Toggle)
+    ));
     match ui::run(Arc::clone(&bridge), tx) {
         Ok(()) => {
             bridge.platform.log("Çıkış.");
@@ -196,6 +207,21 @@ mod tests {
         assert_eq!(read_engine(&dir), Engine::Api);
         save_engine(&dir, Engine::Browser).unwrap();
         assert_eq!(read_engine(&dir), Engine::Browser);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn hotkeys_round_trip_through_settings() {
+        let dir = temp_dir("hotkeys");
+        assert_eq!(read_hotkeys(&dir), Hotkeys::default());
+        save_copy_only(&dir, true).unwrap();
+        let keys = Hotkeys::default()
+            .with(Slot::Cancel, crate::hotkey::Hotkey::parse("Ctrl+Alt+Q").unwrap())
+            .unwrap();
+        save_hotkeys(&dir, &keys).unwrap();
+        assert_eq!(read_hotkeys(&dir), keys);
+        assert!(read_copy_only(&dir), "diğer ayarlar korunur");
+        assert_eq!(read_settings(&dir)["hotkeys"]["cancel"], "Ctrl+Alt+Q");
         fs::remove_dir_all(&dir).unwrap();
     }
 
