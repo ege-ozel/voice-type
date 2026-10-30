@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: cargo test --locked
+      - name: Check extension syntax
+        shell: pwsh
+        run: |
+          foreach ($file in Get-ChildItem extension/*.js) {
+            node --check $file.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Build distribution
+        shell: pwsh
+        run: ./scripts/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChatGPT-Dikte-windows-x64
+          path: |
+            dist/ChatGPT-Dikte-*-windows-x64.zip
+            dist/SHA256SUMS.txt

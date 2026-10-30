@@ -142,6 +142,8 @@
       else if (!findButton('busy')) log('durdurma düğmesi yok; dikte zaten bitmiş');
     }
     log('yazıya dökme bekleniyor');
+    // ChatGPT'de elle durdurmada da köprü bu aşamayı görmeli. Sonuçtan önce teslim edilir.
+    await send({session, event: 'transcribing'});
     const finished = await waitFor(() => findButton('dictate') && !findButton('stop') && !findButton('busy'), 110000);
     active = null;
     log('yazıya dökme ' + (finished ? 'bitti' : 'zaman aşımı') + '; düğmeler: ' + buttonLabels());

@@ -1,0 +1,31 @@
+ChatGPT Dikte 1.0.0 - Windows x64
+
+1. Extract the ZIP to a writable folder.
+2. Run Start.bat. The first launch generates a private bridge-config.json.
+3. Right-click the microphone badge and choose a dictation method:
+
+OpenAI API:
+  Add OPENAI_API_KEY to your Windows user environment:
+    setx OPENAI_API_KEY "your-api-key"
+  Select "Dikte: OpenAI API". No browser extension is needed.
+
+ChatGPT tab:
+  Run Setup.bat to generate/update extension/config.js.
+  Open chrome://extensions, enable Developer mode, choose Load unpacked,
+  and select this package's extension folder.
+  Open chatgpt.com, sign in, and allow the microphone.
+
+Default shortcuts:
+  Ctrl+Alt+Space      start / finish and paste
+  Ctrl+Alt+Enter      finish, paste and press Enter
+  Ctrl+Alt+Backspace  cancel
+
+Click the badge for status, editable shortcuts, paste/clipboard mode,
+sound pack selection, and notification volume. Settings persist next to the EXE.
+Close the app using the tray menu's Exit command.
+
+Updates: exit the old app, replace ChatGPT-Dikte.exe and the extension folder,
+keep bridge-config.json and dikte-ayarlar.json, run Setup.bat, and reload the
+extension and ChatGPT tab. Do not share your generated config files.
+
+Source and releases: https://github.com/ege-ozel/voice-type

@@ -1,16 +1,13 @@
-# Kuruluma özel gizli anahtar — asla commit etme (make_config.py ile üretilir)
+# Local configuration and credentials (never packaged or committed)
 bridge-config.json
-extension/config.js
-# OpenAI API anahtarı içerebilir
 dikte-ayarlar.json
-
-.venv/
-build/
-dist/
-*.spec
-__pycache__/
-*.pyc
+extension/config.js
 *.log
 
-# Rust
-rust/target/
+# Build outputs and optional developer environments
+/target/
+/build/
+/dist/
+/.venv/
+__pycache__/
+*.pyc

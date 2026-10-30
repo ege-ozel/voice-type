@@ -1,5 +1,0 @@
-openai
-sounddevice
-numpy
-keyboard
-pyperclip
